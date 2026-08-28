@@ -3,9 +3,12 @@ polygon segmentations into raster masks.
 
 MAGFiLO annotations follow the COCO format: a JSON file with top-level
 ``images`` and ``annotations`` lists. Each annotation carries a polygon
-``segmentation`` (a filament's pixel-precise shape), a ``bbox``, and a
-chirality label. The exact key used for chirality varies between dataset
-releases, so :func:`chirality_of` checks a few common spots before giving up.
+``segmentation`` (a filament's pixel-precise shape) and a ``bbox``.
+Chirality is encoded as the category itself (categories: Left / Right /
+Unidentifiable / Ambiguous) rather than a separate field in the
+filament-segmentation-2026 release, so :func:`chirality_of` resolves it via
+``category_id`` -> category name; a few alternate key spellings are also
+checked in case other releases store it differently.
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 CHIRALITY_KEYS = ("chirality", "label", "class", "chirality_label")
-CHIRALITY_VALUES = {"left", "right", "unidentifiable"}
+CHIRALITY_VALUES = {"left", "right", "unidentifiable", "ambiguous"}
 
 
 def load_coco(ann_file: str | Path) -> dict[str, Any]:

@@ -1,16 +1,14 @@
 """PyTorch datasets for the MAGFiLO / filament-segmentation-2026 data.
 
-Expected layout (matches how MAGFiLO-derived Kaggle data is usually shipped):
+Confirmed layout for the real filament-segmentation-2026 download:
 
     data/
       train/
-        images/<file_name>.png            # matches COCO "file_name"
-      train_annotations.json              # COCO-format polygons
-      test/
-        images/<file_name>.png            # no ground truth
+        <file_name>.jpeg                  # matches COCO "file_name", flat, no subfolder
+      train_annotations.json              # COCO-format polygons (2048x2048 full-disk H-alpha)
 
-If the real competition's folder names differ, pass ``images_dir`` /
-``ann_file`` explicitly -- nothing here is hard-coded beyond that.
+If your test set folder differs, pass ``images_dir`` explicitly -- nothing
+here is hard-coded beyond the ``--images-dir`` / ``--ann-file`` CLI args.
 """
 from __future__ import annotations
 

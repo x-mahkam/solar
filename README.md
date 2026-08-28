@@ -62,16 +62,16 @@ pip install -r requirements.txt
 python tests/test_smoke.py
 
 # get the real data — see scripts/download_data.md
-# then train:
+# then train (confirmed layout: images flat under data/train/, e.g. data/train/20110109104734Ch.jpeg):
 python -m filament_seg.train \
-  --images-dir data/train/images \
+  --images-dir data/train \
   --ann-file data/train_annotations.json \
   --output-dir runs/baseline \
   --epochs 40 --batch-size 8 --image-size 512
 
-# predict on the test set:
+# predict on the test set (path depends on how the test split is shipped):
 python -m filament_seg.predict \
-  --images-dir data/test/images \
+  --images-dir data/test \
   --checkpoint runs/baseline/best.pt \
   --output submission.csv
 ```
@@ -83,13 +83,18 @@ Kaggle expects, and adjust the column names in `predict.py` if needed.
 
 ## Where to take it from here
 
-- **Data assumptions to verify first**: image file format (PNG/JPEG vs. raw
-  FITS — H-alpha data is often distributed as FITS; `dataset.py` currently
-  loads via `PIL`, which can't read FITS directly — you'd preprocess with
-  `astropy.io.fits` first if that's what you get), exact JSON key for
-  chirality, and image resolution (full-disk GONG frames are large; 512 may
-  be too small — consider tiling instead of a single resize for the real
-  run).
+- **Confirmed against the real download**: images are `.jpeg`, 2048x2048,
+  flat under `data/train/` (matches COCO `file_name` directly, no FITS
+  conversion needed). Chirality is the category itself — categories are
+  `Left` / `Right` / `Unidentifiable` / `Ambiguous` (id 1-4) — `coco_utils.chirality_of`
+  already resolves this via `category_id`.
+- **Still worth checking**: full-disk frames are 2048x2048 and filaments are
+  thin; a single resize to 512 (the default) will shrink barbs a lot —
+  worth trying a larger `--image-size` (e.g. 768-1024, memory permitting) or
+  tiling into crops instead of one global resize once the baseline is
+  working end-to-end. Also check how the test split is shipped (folder name,
+  and whether ground truth is withheld or a `sample_submission.csv` is
+  provided) before running `predict.py`.
 - **Model upgrades**: the U-Net here is intentionally minimal. The
   [EdgeAttNet](https://github.com/dasjar/EdgeAttNet) paper from the same
   group that built MAGFiLO reports mIoU 0.645 (pairwise) / 0.703

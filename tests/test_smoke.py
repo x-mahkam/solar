@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -63,9 +64,7 @@ def make_fake_data(root: Path, n_images: int = 4, size: int = 128):
 
 
 def main():
-    tmp_root = Path("/tmp/filament_smoke_test")
-    if tmp_root.exists():
-        shutil.rmtree(tmp_root)
+    tmp_root = Path(tempfile.mkdtemp(prefix="filament_smoke_test_"))
     images_dir, ann_file = make_fake_data(tmp_root)
 
     ds = FilamentDataset(images_dir, ann_file, image_size=64)
