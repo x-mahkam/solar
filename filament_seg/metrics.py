@@ -126,3 +126,35 @@ def instance_metrics(
         results[f"miss_rate@{thr}"] = 1 - recall
         results[f"mean_iou_matched@{thr}"] = float(np.mean(ious)) if ious else 0.0
     return results
+
+
+def panoptic_quality(pred_instances: list[np.ndarray], gt_instances: list[np.ndarray], iou_threshold: float = 0.5) -> float:
+    """Panoptic Quality, as defined on the competition's Evaluation page
+    (Kirillov et al., 10.1109/CVPR.2019.00963):
+
+        PQ = sum(IoU over matched pairs) / (|TP| + 0.5*|FP| + 0.5*|FN|)
+
+    A predicted/ground-truth pair is a match (TP) if IoU > iou_threshold;
+    at threshold 0.5 greedy matching is equivalent to optimal matching,
+    since no ground-truth instance can have IoU > 0.5 with two different
+    predictions simultaneously.
+    """
+    matched_gt: set[int] = set()
+    tp_ious = []
+    for pred in pred_instances:
+        best_iou, best_j = 0.0, -1
+        for j, gt in enumerate(gt_instances):
+            if j in matched_gt:
+                continue
+            iou = _iou(pred, gt)
+            if iou > best_iou:
+                best_iou, best_j = iou, j
+        if best_iou > iou_threshold and best_j >= 0:
+            matched_gt.add(best_j)
+            tp_ious.append(best_iou)
+
+    tp = len(tp_ious)
+    fp = len(pred_instances) - tp
+    fn = len(gt_instances) - tp
+    denom = tp + 0.5 * fp + 0.5 * fn
+    return float(sum(tp_ious) / denom) if denom > 0 else 1.0

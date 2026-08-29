@@ -1,11 +1,22 @@
-"""Run-length encoding helpers matching Kaggle's usual column-major RLE format
-(as used in Airbus/HuBMAP/Sartorius-style segmentation competitions):
-1-indexed pixel position, in column-major (Fortran) order, as
-"start length start length ...".
+"""Run-length encoding helpers.
+
+Two distinct RLE formats are used in this repo:
+
+- ``mask_to_rle`` / ``rle_to_mask``: the simple numeric "start length ..."
+  format used by many older Kaggle segmentation competitions (Airbus/HuBMAP/
+  Sartorius-style). Handy for quick local round-trip checks.
+- ``mask_to_coco_rle``: the compressed ASCII format produced by
+  ``pycocotools.mask.encode`` (COCO RLE "counts" string). This is what
+  filament-segmentation-2026 actually expects in ``segmentation_rle`` --
+  see the competition's Evaluation page, which explicitly names
+  ``pycocotools`` / ``annToMask`` as the expected conversion path. Do not
+  submit the numeric format below; it will not be understood by their
+  scorer.
 """
 from __future__ import annotations
 
 import numpy as np
+from pycocotools import mask as _maskUtils
 
 
 def mask_to_rle(mask: np.ndarray) -> str:
@@ -29,3 +40,20 @@ def rle_to_mask(rle: str, shape: tuple[int, int]) -> np.ndarray:
         start -= 1
         mask[start:start + length] = 1
     return mask.reshape((width, height)).T
+
+
+def mask_to_coco_rle(mask: np.ndarray) -> str:
+    """Encode a binary (H, W) mask as a pycocotools RLE "counts" string --
+    the format filament-segmentation-2026 expects in ``segmentation_rle``.
+    Only the counts are returned (the competition fixes size at 2048x2048
+    for every image, so it doesn't need to be stored per row)."""
+    fortran_mask = np.asfortranarray(mask.astype(np.uint8))
+    rle = _maskUtils.encode(fortran_mask)
+    return rle["counts"].decode("ascii")
+
+
+def coco_rle_to_mask(counts: str, shape: tuple[int, int]) -> np.ndarray:
+    """Decode a pycocotools RLE "counts" string back into a (H, W) mask."""
+    height, width = shape
+    rle = {"size": [height, width], "counts": counts.encode("ascii")}
+    return _maskUtils.decode(rle)

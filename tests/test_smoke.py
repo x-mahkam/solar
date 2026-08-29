@@ -20,9 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from filament_seg.dataset import FilamentDataset, FilamentTestDataset
 from filament_seg.losses import BCEDiceLoss
-from filament_seg.metrics import connected_components, instance_metrics, pixel_scores
+from filament_seg.metrics import connected_components, instance_metrics, panoptic_quality, pixel_scores
 from filament_seg.model import UNet
-from filament_seg.rle import mask_to_rle, rle_to_mask
+from filament_seg.rle import coco_rle_to_mask, mask_to_coco_rle, mask_to_rle, rle_to_mask
 
 
 def make_fake_data(root: Path, n_images: int = 4, size: int = 128):
@@ -99,10 +99,19 @@ def main():
     inst_scores = instance_metrics(pred_mask, comps)
     print("instance metrics OK:", inst_scores)
 
+    pred_comps = connected_components(pred_mask.astype(bool))
+    pq = panoptic_quality(pred_comps, comps)
+    print("panoptic_quality OK:", pq)
+
     rle = mask_to_rle(gt_np)
     recovered = rle_to_mask(rle, gt_np.shape)
     assert np.array_equal(gt_np, recovered), "RLE round-trip mismatch"
     print("RLE round-trip OK, length:", len(rle))
+
+    coco_rle = mask_to_coco_rle(gt_np)
+    coco_recovered = coco_rle_to_mask(coco_rle, gt_np.shape)
+    assert np.array_equal(gt_np, coco_recovered), "COCO RLE round-trip mismatch"
+    print("COCO RLE round-trip OK (submission format), counts:", coco_rle)
 
     test_ds = FilamentTestDataset(images_dir, image_size=64)
     t_img, name, h, w = test_ds[0]

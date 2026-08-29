@@ -2,32 +2,64 @@
 
 A working PyTorch baseline for
 [kaggle.com/competitions/filament-segmentation-2026](https://www.kaggle.com/competitions/filament-segmentation-2026)
-(mirrored at the [IEEE Big Data Cup 2026](https://bigdataieee.org/BigData2026/cup/solar-filament-segmentation/)).
+(the IEEE Big Data Cup 2026 "Pixel-Precise Segmentation of Solar Filaments"
+challenge, hosted by the Earth-Space AI Research (ESAIR) Lab).
+
+The facts below are confirmed against the competition's own Overview/Data/
+Rules pages (the user shared screenshots of these — this sandbox cannot
+reach kaggle.com directly), not guessed.
 
 ## The competition, in short
 
-- **Task**: pixel-precise segmentation of solar filaments in full-disk GONG
-  H-alpha images — including thin barbs, faint material, and separating each
-  filament as one coherent object.
-- **Data**: [MAGFiLO](https://www.nature.com/articles/s41597-024-03876-y), the
-  largest gold-standard filament dataset — 10,244 manually annotated
-  filaments across 1,593 observations (2011-2022), with polygon masks,
-  spines, bounding boxes, and chirality labels ('left' / 'right' /
-  'unidentifiable'), shipped as a COCO-format JSON.
-- **Metrics**: IoU, precision, recall, AP@IoU, hit/miss rate, and the
-  organizers' own multi-scale IoU (MIoU) for fine structures.
-- **Notes**: any method is allowed (classical CV to deep nets); it's a code
-  competition — source code is required from top teams; prizes include cash
-  and/or IEEE Big Data 2026 registration.
-
-I could not reach `kaggle.com` from this sandbox (network egress is
-blocked here), so I wasn't able to confirm the *exact* file layout, submission
-CSV columns, or deadline first-hand — the above is pieced together from the
-IEEE mirror, the MAGFiLO paper, and the [EdgeAttNet paper/code](https://arxiv.org/abs/2509.02964)
-(same research group's own baseline model for this exact dataset). See
-`scripts/download_data.md` before your first real run — you'll need to
-download the data yourself and double check paths/columns against what
-Kaggle actually gives you.
+- **Task**: from GONG H-alpha full-disk images, produce a segmentation mask
+  for every individual solar filament — capturing fine structures (barbs),
+  separating filament material from background noise, and keeping each
+  filament as one coherent instance.
+- **Data (MAGFiLO)**: `MAGFiLO_1.0_Kaggle_2026/train/train_images/*.jpeg` +
+  `MAGFiLO_1.0_Annotations_kaggle2026_train.json` (COCO-format polygons),
+  and `MAGFiLO_1.0_Kaggle_2026/test/test_images/*.jpeg` for the held-out
+  test set. All images are 2048x2048. Categories double as chirality labels:
+  `Left` / `Right` / `Unidentifiable` / `Ambiguous` (ids 1-4). License:
+  CC BY-NC 4.0.
+- **Metric**: **Panoptic Quality (PQ)** (Kirillov et al., CVPR 2019):
+  `PQ = (sum of IoU over matched pred/GT pairs) / (|TP| + 0.5|FP| + 0.5|FN|)`,
+  matched at IoU > 0.5. Implemented in `filament_seg/metrics.py:panoptic_quality`.
+  Organizers also track Dice-score and IoU distributions, and one-to-many /
+  many-to-one (fragmentation/over-merging) rates.
+- **Submission**: one CSV for the whole test set, **one row per predicted
+  filament instance** (not per image):
+  ```
+  filament_id,segmentation_rle
+  20150125172714Mh_1,<pycocotools RLE counts, no quotes>
+  20150125172714Mh_2,<pycocotools RLE counts, no quotes>
+  ```
+  `filament_id` is `<image filename stem>_<1-based index>`. `segmentation_rle`
+  is the **pycocotools** RLE "counts" string (`mask.encode` on a Fortran-order
+  binary mask) — *not* a plain numeric RLE. Size isn't stored per row (fixed
+  2048x2048). `filament_seg/predict.py` already produces this format.
+- **Scoring rubric** (partially seen): Qualitative Comparison is 30% (pipeline
+  description, segmentation morphology on H-alpha images, code quality) —
+  the rest is quantitative (PQ/Dice/IoU on the leaderboard), all **contingent
+  on your source code being available** to the organizers.
+- **Open-Access Policy**: to be eligible for final evaluation, your Git repo
+  must be **publicly accessible** from the moment the competition closes
+  through at least the winners' announcement. Code quality (modularity,
+  reproducibility, documentation) factors into the score.
+- **Final submission** (separate from the Kaggle leaderboard, due **Nov 15,
+  2026**): a Google Form with (1) a 4-page technical report from the
+  organizers' Overleaf template, and (2) your public repo link, containing a
+  `requirements.txt` with pinned versions and a Jupyter notebook that runs
+  the *entire* pipeline end-to-end with no extra files needed. **This repo
+  currently has no such notebook — add one before the deadline** (see
+  "Still needed" below).
+- **Dates**: launched Jul 10, 2026 · final reports due **Nov 15, 2026** ·
+  winners announced Nov 30, 2026 · optional IEEE BigData conference Dec
+  14-17, 2026, Phoenix, AZ.
+- **Prizes**: pool up to $3,000, split across top 3 teams proportional to
+  score (`weight = score^2.0`, normalized). No Kaggle points/medals.
+- **Integrity note**: the organizers posted a warning (Aug 20, 2026) about
+  participants "hacking the system" instead of solving the actual problem,
+  and said any PQ > 0.3 is already valuable — don't chase leaderboard hacks.
 
 ## What's here
 
@@ -38,19 +70,19 @@ filament_seg/
   transforms.py   # flip/rotate augmentation (no albumentations dependency)
   model.py        # plain U-Net (single-channel in, works with no pretrained weights)
   losses.py       # BCE + soft-Dice
-  metrics.py      # pixel IoU/Dice/precision/recall + instance-level AP@IoU/hit-miss
-  rle.py          # Kaggle-style RLE encode/decode
-  train.py        # training CLI
-  predict.py      # inference CLI -> submission.csv
+  metrics.py      # pixel IoU/Dice/precision/recall + instance AP/hit-miss + Panoptic Quality
+  rle.py          # numeric RLE (local checks) + pycocotools COCO RLE (actual submission format)
+  train.py        # training CLI (tqdm progress bars)
+  predict.py      # inference CLI -> submission.csv (filament_id, segmentation_rle)
 tests/test_smoke.py  # end-to-end test on synthetic data, no real data needed
 scripts/download_data.md
 ```
 
-Everything has been smoke-tested end to end (dataset loading, a training
-step, metrics, RLE round-trip, and both CLIs) against synthetic data — see
-`tests/test_smoke.py`. It has **not** been run against the real competition
-data, since that requires a Kaggle account/API token this environment can't
-use.
+Confirmed working against the real dataset (not just synthetic data): a
+laptop CPU run (3 epochs, 256px) reached val IoU 0.41, and a Kaggle
+Notebook GPU run (T4, 40 epochs, 512px) reached val IoU 0.51 in about an
+hour. `tests/test_smoke.py` end-to-end tests the whole pipeline including
+the real submission RLE format on synthetic data.
 
 ## Quickstart
 
@@ -62,45 +94,52 @@ pip install -r requirements.txt
 python tests/test_smoke.py
 
 # get the real data — see scripts/download_data.md
-# then train (confirmed layout: images flat under data/train/, e.g. data/train/20110109104734Ch.jpeg):
 python -m filament_seg.train \
-  --images-dir data/train \
-  --ann-file data/train_annotations.json \
+  --images-dir MAGFiLO_1.0_Kaggle_2026/train/train_images \
+  --ann-file MAGFiLO_1.0_Kaggle_2026/train/MAGFiLO_1.0_Annotations_kaggle2026_train.json \
   --output-dir runs/baseline \
-  --epochs 40 --batch-size 8 --image-size 512
+  --epochs 40 --batch-size 16 --image-size 512
 
-# predict on the test set (path depends on how the test split is shipped):
+# predict on the test set -> submission.csv in the exact competition format
 python -m filament_seg.predict \
-  --images-dir data/test \
+  --images-dir MAGFiLO_1.0_Kaggle_2026/test/test_images \
   --checkpoint runs/baseline/best.pt \
   --output submission.csv
 ```
 
-`--instance-level` on `predict.py` switches from one RLE row per image
-(union of all filaments) to one row per predicted connected component —
-check the real `sample_submission.csv` once you have it to see which shape
-Kaggle expects, and adjust the column names in `predict.py` if needed.
+On Windows, add `--num-workers 0` to `train.py` (multiprocessing DataLoader
+workers can hang/slow down badly there). On a CPU-only machine, expect
+~35-40 min/epoch at these settings; a free Kaggle Notebook GPU (T4) does the
+same epoch in ~80 seconds — see `scripts/download_data.md` for both paths.
+
+## Still needed before the Nov 15 deadline
+
+This starter kit gets you a working, correctly-formatted baseline. It does
+**not** yet satisfy the competition's *Final Submission* requirements on its
+own:
+
+- [ ] **Make the GitHub repo public** before the competition closes (Open-Access
+  Policy) — currently unverified from this session.
+- [ ] **Add a Jupyter notebook** that runs the complete pipeline (data load →
+  train → predict → submission.csv) with no other files required, per the
+  Code Repository requirement.
+- [ ] **Write the 4-page technical report** from the organizers' Overleaf
+  template, describing preprocessing, architecture, training, post-processing
+  (this is 30% of the score — "Qualitative Comparison" explicitly asks for
+  this description plus code quality and segmentation morphology).
+- [ ] **Submit the Google Form** with the report and repo link by Nov 15, 2026.
+- [ ] Run the organizers' **self-evaluation notebook**
+  (`kaggle.com/code/azimahmadzadeh/self-evaluation-notebook`) against your
+  predictions to sanity-check your local PQ against theirs before relying on it.
 
 ## Where to take it from here
 
-- **Confirmed against the real download**: images are `.jpeg`, 2048x2048,
-  flat under `data/train/` (matches COCO `file_name` directly, no FITS
-  conversion needed). Chirality is the category itself — categories are
-  `Left` / `Right` / `Unidentifiable` / `Ambiguous` (id 1-4) — `coco_utils.chirality_of`
-  already resolves this via `category_id`.
-- **Still worth checking**: full-disk frames are 2048x2048 and filaments are
-  thin; a single resize to 512 (the default) will shrink barbs a lot —
-  worth trying a larger `--image-size` (e.g. 768-1024, memory permitting) or
-  tiling into crops instead of one global resize once the baseline is
-  working end-to-end. Also check how the test split is shipped (folder name,
-  and whether ground truth is withheld or a `sample_submission.csv` is
-  provided) before running `predict.py`.
 - **Model upgrades**: the U-Net here is intentionally minimal. The
   [EdgeAttNet](https://github.com/dasjar/EdgeAttNet) paper from the same
   group that built MAGFiLO reports mIoU 0.645 (pairwise) / 0.703
   (multi-scale) using a U-Net + edge-guided self-attention bottleneck aimed
   specifically at capturing thin barbs — a natural next step once the plain
-  U-Net baseline is working end-to-end on real data.
+  U-Net baseline is solid.
 - **Class imbalance**: filaments are thin structures on a mostly-background
   disk; `BCEDiceLoss` is a reasonable start, but also worth trying: Tversky
   loss (penalize false negatives harder), boundary/edge losses, or heavier
@@ -108,6 +147,20 @@ Kaggle expects, and adjust the column names in `predict.py` if needed.
 - **Instance separation**: the current pipeline predicts one semantic mask
   and splits it into instances via connected components at inference time —
   fine as a baseline, but two filaments that touch will get merged into one
-  predicted instance. An instance-segmentation head (Mask R-CNN-style) or
-  a learned watershed/energy map would fix that if AP@IoU matters a lot for
-  scoring.
+  predicted instance, hurting PQ (counted as fragmentation/over-merging by
+  the organizers' rubric too). An instance-segmentation head (Mask
+  R-CNN-style) or a learned watershed/energy map would address this.
+- **Resolution**: full-disk frames are 2048x2048 and filaments/barbs are
+  thin; a single resize to 512 (the default) loses a lot of fine detail —
+  worth trying a larger `--image-size` (memory permitting) or tiling into
+  crops instead of one global resize.
+
+## Integrity note
+
+While setting this up, a *different, unrelated* Kaggle dataset containing
+another participant's full solution (code, technical report, "rules
+compliance" docs) was briefly attached to a Notebook by mistake while
+searching for the official competition data. **None of that code was used
+here** — everything in this repo was written from scratch against the
+official rules. Do not reuse another team's submission; the organizers have
+explicitly flagged leaderboard-gaming behavior as a concern.

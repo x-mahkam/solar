@@ -1,15 +1,25 @@
-"""Run inference and write a Kaggle-style submission CSV.
+"""Run inference and write the competition's submission CSV.
 
-The exact column names / one-row-per-image vs one-row-per-instance format for
-filament-segmentation-2026 should be copied from the real sample_submission.csv
-once you've downloaded the competition data (see scripts/download_data.md).
-By default this produces one row per image with a single RLE covering all
-predicted filament pixels (ImageId, EncodedPixels); pass --instance-level to
-instead emit one row per predicted connected component.
+Per the official Evaluation page for filament-segmentation-2026, the
+submission is a single CSV covering the whole test set with one row per
+*predicted filament instance* (not one row per image):
+
+    filament_id,segmentation_rle
+    20150125172714Mh_1,"<pycocotools RLE counts>"
+    20150125172714Mh_2,"<pycocotools RLE counts>"
+    ...
+
+- filament_id is "<image filename stem>_<1-based index>".
+- segmentation_rle is the pycocotools RLE "counts" string (no quotes, no
+  stored size -- every image is fixed at 2048x2048).
+
+Predicted instances come from splitting the model's binary mask into
+connected components; this is a reasonable proxy but will under-segment two
+filaments that touch (see README "Where to take it from here").
 
 Example:
     python -m filament_seg.predict \
-        --images-dir data/test/images \
+        --images-dir data/test/test_images \
         --checkpoint runs/baseline/best.pt \
         --output submission.csv
 """
@@ -22,13 +32,12 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image
 from torch.utils.data import DataLoader
 
 from .dataset import FilamentTestDataset
 from .metrics import connected_components
 from .model import UNet
-from .rle import mask_to_rle
+from .rle import mask_to_coco_rle
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,8 +50,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--min-component-size", type=int, default=10,
                     help="drop predicted connected components smaller than this many pixels")
-    p.add_argument("--instance-level", action="store_true",
-                    help="emit one row per connected component instead of one row per image")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return p.parse_args()
@@ -72,22 +79,19 @@ def main() -> None:
                 prob = F.interpolate(prob, size=(h, w), mode="bilinear", align_corners=False)
                 mask = (prob[0, 0].cpu().numpy() > args.threshold).astype(np.uint8)
 
-                if args.instance_level:
-                    components = connected_components(mask.astype(bool))
-                    components = [c for c in components if c.sum() >= args.min_component_size]
-                    if not components:
-                        rows.append([names[i], ""])
-                    for comp in components:
-                        rows.append([names[i], mask_to_rle(comp.astype(np.uint8))])
-                else:
-                    rows.append([names[i], mask_to_rle(mask)])
+                stem = Path(names[i]).stem
+                components = connected_components(mask.astype(bool))
+                components = [c for c in components if c.sum() >= args.min_component_size]
+                for idx, comp in enumerate(components, start=1):
+                    filament_id = f"{stem}_{idx}"
+                    rows.append([filament_id, mask_to_coco_rle(comp.astype(np.uint8))])
 
     with open(args.output, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["ImageId", "EncodedPixels"])
+        writer.writerow(["filament_id", "segmentation_rle"])
         writer.writerows(rows)
 
-    print(f"Wrote {len(rows)} rows to {args.output}")
+    print(f"Wrote {len(rows)} predicted filaments to {args.output}")
 
 
 if __name__ == "__main__":
