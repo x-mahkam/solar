@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, random_split
+from tqdm import tqdm
 
 from .dataset import FilamentDataset
 from .losses import BCEDiceLoss
@@ -89,7 +90,8 @@ def main() -> None:
         for epoch in range(1, args.epochs + 1):
             model.train()
             train_loss = 0.0
-            for images, masks, _ in train_loader:
+            train_bar = tqdm(train_loader, desc=f"epoch {epoch}/{args.epochs} [train]", unit="batch")
+            for images, masks, _ in train_bar:
                 images, masks = images.to(device), masks.to(device)
                 optimizer.zero_grad()
                 logits = model(images)
@@ -97,13 +99,15 @@ def main() -> None:
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item() * images.size(0)
+                train_bar.set_postfix(loss=f"{loss.item():.4f}")
             train_loss /= len(train_ds)
 
             model.eval()
             val_loss = 0.0
             agg = {"iou": 0.0, "dice": 0.0, "precision": 0.0, "recall": 0.0}
+            val_bar = tqdm(val_loader, desc=f"epoch {epoch}/{args.epochs} [val]", unit="batch")
             with torch.no_grad():
-                for images, masks, _ in val_loader:
+                for images, masks, _ in val_bar:
                     images, masks = images.to(device), masks.to(device)
                     logits = model(images)
                     loss = criterion(logits, masks)
