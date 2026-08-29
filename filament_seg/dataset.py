@@ -85,13 +85,16 @@ class FilamentTestDataset(Dataset):
     """Inference dataset: just images, no annotations. Also returns original size
     so predictions can be resized back before RLE-encoding."""
 
-    def __init__(self, images_dir: str | Path, image_size: int = 512):
+    def __init__(self, images_dir: str | Path, image_size: int = 512, file_names: list[str] | None = None):
         self.images_dir = Path(images_dir)
         self.image_size = image_size
-        self.files = sorted(
-            p for p in self.images_dir.iterdir()
-            if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".fits"}
-        )
+        if file_names is not None:
+            self.files = sorted(self.images_dir / name for name in file_names)
+        else:
+            self.files = sorted(
+                p for p in self.images_dir.iterdir()
+                if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".fits"}
+            )
 
     def __len__(self) -> int:
         return len(self.files)

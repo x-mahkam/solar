@@ -112,11 +112,40 @@ workers can hang/slow down badly there). On a CPU-only machine, expect
 ~35-40 min/epoch at these settings; a free Kaggle Notebook GPU (T4) does the
 same epoch in ~80 seconds — see `scripts/download_data.md` for both paths.
 
+`train.py` also writes `val_image_ids.txt` / `val_file_names.txt` to its
+output dir (the held-out split it evaluated on each epoch), so you can
+score that exact split locally:
+
+```bash
+# predict on just the held-out validation images
+python -m filament_seg.predict \
+  --images-dir MAGFiLO_1.0_Kaggle_2026/train/train_images \
+  --checkpoint runs/baseline/best.pt \
+  --file-list runs/baseline/val_file_names.txt \
+  --output val_predictions.csv
+
+# build a matching ground-truth CSV for that same split
+python -m filament_seg.self_eval build-gt \
+  --ann-file MAGFiLO_1.0_Kaggle_2026/train/MAGFiLO_1.0_Annotations_kaggle2026_train.json \
+  --image-ids-file runs/baseline/val_image_ids.txt \
+  --output val_gt.csv
+
+# score with the organizers' exact Panoptic Quality formula
+python -m filament_seg.self_eval score --gt-csv val_gt.csv --pred-csv val_predictions.csv
+```
+
+`filament_seg/self_eval.py` is a faithful, tested port of the organizers'
+own self-evaluation notebook (`kaggle.com/code/azimahmadzadeh/self-evaluation-notebook`)
+-- same `filament_id`/`segmentation_rle` matching logic (including the
+annotator-prefix stripping on the GT side) and the same pooled PQ formula,
+verified against it to give PQ=1.0 for an exact match and PQ=0.0 for an
+empty prediction.
+
 ## Still needed before the Nov 15 deadline
 
-This starter kit gets you a working, correctly-formatted baseline. It does
-**not** yet satisfy the competition's *Final Submission* requirements on its
-own:
+This starter kit gets you a working, correctly-formatted baseline with a
+locally-verifiable PQ score. It does **not** yet satisfy the competition's
+*Final Submission* requirements on its own:
 
 - [ ] **Make the GitHub repo public** before the competition closes (Open-Access
   Policy) — currently unverified from this session.
@@ -128,9 +157,9 @@ own:
   (this is 30% of the score — "Qualitative Comparison" explicitly asks for
   this description plus code quality and segmentation morphology).
 - [ ] **Submit the Google Form** with the report and repo link by Nov 15, 2026.
-- [ ] Run the organizers' **self-evaluation notebook**
-  (`kaggle.com/code/azimahmadzadeh/self-evaluation-notebook`) against your
-  predictions to sanity-check your local PQ against theirs before relying on it.
+- [x] ~~Run the organizers' self-evaluation notebook against your predictions~~
+  -- done: `filament_seg/self_eval.py` reproduces it locally (still worth a
+  one-time cross-check against the actual notebook before the deadline).
 
 ## Where to take it from here
 

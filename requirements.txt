@@ -3,3 +3,4 @@ pillow
 torch
 tqdm
 pycocotools
+pandas

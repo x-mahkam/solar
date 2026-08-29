@@ -70,6 +70,15 @@ def main() -> None:
         image_ids=[full_ds.image_ids[i] for i in val_subset.indices],
     )
 
+    val_image_ids = val_ds.image_ids
+    with open(output_dir / "val_image_ids.txt", "w") as f:
+        f.write("\n".join(str(i) for i in val_image_ids))
+    val_file_names = [full_ds.images[i]["file_name"] for i in val_image_ids]
+    with open(output_dir / "val_file_names.txt", "w") as f:
+        f.write("\n".join(val_file_names))
+    print(f"Saved {len(val_image_ids)} validation image ids/filenames to {output_dir} "
+          f"(use with filament_seg.self_eval to check PQ on the exact held-out split)")
+
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                                num_workers=args.num_workers, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,

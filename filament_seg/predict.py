@@ -50,6 +50,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--min-component-size", type=int, default=10,
                     help="drop predicted connected components smaller than this many pixels")
+    p.add_argument("--file-list", default=None,
+                    help="optional text file, one image filename per line, to restrict prediction "
+                         "to a subset (e.g. runs/baseline/val_file_names.txt for local self-evaluation)")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return p.parse_args()
@@ -63,7 +66,11 @@ def main() -> None:
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
     model.eval()
 
-    ds = FilamentTestDataset(args.images_dir, image_size=args.image_size)
+    file_names = None
+    if args.file_list:
+        with open(args.file_list) as f:
+            file_names = [line.strip() for line in f if line.strip()]
+    ds = FilamentTestDataset(args.images_dir, image_size=args.image_size, file_names=file_names)
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     rows = []
