@@ -43,9 +43,20 @@ def pixel_scores(logits: torch.Tensor, targets: torch.Tensor, threshold: float =
 def connected_components(mask: np.ndarray) -> list[np.ndarray]:
     """4-connected component labeling for a binary mask.
 
-    Returns a list of boolean masks, one per component. Pure-numpy union-find;
-    fine for occasional validation use, not meant for large-scale training loops.
+    Returns a list of boolean masks, one per component. Uses scipy (fast, C
+    implementation) when available -- needed for e.g. sweeping post-processing
+    parameters over many full-resolution (2048x2048) images -- falling back to
+    a pure-numpy union-find otherwise.
     """
+    try:
+        from scipy import ndimage
+    except ImportError:
+        pass
+    else:
+        structure = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])  # 4-connectivity
+        labeled, n = ndimage.label(mask, structure=structure)
+        return [labeled == i for i in range(1, n + 1)]
+
     h, w = mask.shape
     labels = -np.ones((h, w), dtype=np.int32)
     ys, xs = np.nonzero(mask)

@@ -199,6 +199,39 @@ requirements:
   worth trying a larger `--image-size` (memory permitting) or tiling into
   crops instead of one global resize.
 
+## Pushing PQ higher: `tune_postprocess.py`
+
+The 0.3386 PQ run had 1759 predicted filaments against 1232 ground-truth --
+noticeable over-segmentation, likely fixable without retraining. Before
+spending GPU time on a bigger model, sweep the post-processing operating
+point (probability threshold, minimum component size, morphological
+closing to merge nearby fragments) against the *already-trained* checkpoint:
+
+```bash
+python -m filament_seg.tune_postprocess \
+  --images-dir MAGFiLO_1.0_Kaggle_2026/train/train_images \
+  --ann-file MAGFiLO_1.0_Kaggle_2026/train/MAGFiLO_1.0_Annotations_kaggle2026_train.json \
+  --checkpoint runs/baseline/best.pt \
+  --file-list runs/baseline/val_file_names.txt \
+  --image-ids-file runs/baseline/val_image_ids.txt
+```
+
+This runs one forward pass per validation image (reusing the cached
+probability maps), then cheaply re-binarizes/re-labels/re-scores every
+(threshold, min-size, closing-size) combination with the real PQ formula,
+and writes a sorted `tune_results.csv`. Whatever combination wins, pass the
+same `--threshold` / `--min-component-size` / `--closing-size` to
+`predict.py` when generating the real submission.
+
+Rough order of expected impact for further PQ gains, cheapest first:
+1. Post-processing tuning above (no retrain).
+2. Larger `--image-size` (768-1024) so thin barbs survive the resize.
+3. More capacity (`--base-ch 64`) and/or a loss better suited to thin
+   structures (Tversky, boundary loss) instead of plain `BCEDiceLoss`.
+4. Architecture change -- EdgeAttNet-style edge-guided attention (see
+   "Model upgrades" above); this is the one that requires real engineering
+   work, not just hyperparameters.
+
 ## Integrity note
 
 While setting this up, a *different, unrelated* Kaggle dataset containing

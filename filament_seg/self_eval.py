@@ -45,9 +45,21 @@ def build_gt_dataframe(ann_file: str, image_ids: list[str] | None = None) -> pd.
 
     ids = image_ids if image_ids is not None else list(images.keys())
 
+    # image_ids passed in (e.g. read from a text file) are always strings;
+    # COCO image ids are strings in the real MAGFiLO data but may be JSON
+    # numbers (-> python int) in other releases/synthetic data, so match
+    # flexibly rather than assuming the caller's type matches the JSON's.
+    def _resolve(image_id):
+        if image_id in images:
+            return image_id, images[image_id]
+        for candidate in (str(image_id), int(image_id) if str(image_id).lstrip("-").isdigit() else None):
+            if candidate is not None and candidate in images:
+                return candidate, images[candidate]
+        raise KeyError(f"image_id {image_id!r} not found in {ann_file}")
+
     rows = []
-    for image_id in ids:
-        info = images[image_id]
+    for raw_id in ids:
+        image_id, info = _resolve(raw_id)
         height, width = info["height"], info["width"]
         for idx, ann in enumerate(anns_by_image.get(image_id, []), start=1):
             mask = coco_utils.polygons_to_mask(ann["segmentation"], height, width)

@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
+from scipy import ndimage
 from torch.utils.data import DataLoader
 
 from .dataset import FilamentTestDataset
@@ -50,6 +51,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--min-component-size", type=int, default=10,
                     help="drop predicted connected components smaller than this many pixels")
+    p.add_argument("--closing-size", type=int, default=0,
+                    help="morphological closing kernel size before splitting into components "
+                         "(0 = off); merges nearby fragments of the same filament, reducing "
+                         "over-segmentation -- tune with filament_seg.tune_postprocess")
     p.add_argument("--file-list", default=None,
                     help="optional text file, one image filename per line, to restrict prediction "
                          "to a subset (e.g. runs/baseline/val_file_names.txt for local self-evaluation)")
@@ -84,10 +89,13 @@ def main() -> None:
                 h, w = int(heights[i]), int(widths[i])
                 prob = probs[i, 0].unsqueeze(0).unsqueeze(0)
                 prob = F.interpolate(prob, size=(h, w), mode="bilinear", align_corners=False)
-                mask = (prob[0, 0].cpu().numpy() > args.threshold).astype(np.uint8)
+                mask = (prob[0, 0].cpu().numpy() > args.threshold).astype(bool)
+                if args.closing_size > 0:
+                    structure = np.ones((args.closing_size, args.closing_size), dtype=bool)
+                    mask = ndimage.binary_closing(mask, structure=structure)
 
                 stem = Path(names[i]).stem
-                components = connected_components(mask.astype(bool))
+                components = connected_components(mask)
                 components = [c for c in components if c.sum() >= args.min_component_size]
                 for idx, comp in enumerate(components, start=1):
                     filament_id = f"{stem}_{idx}"

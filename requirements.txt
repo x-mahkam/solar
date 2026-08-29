@@ -4,3 +4,4 @@ torch
 tqdm
 pycocotools
 pandas
+scipy
