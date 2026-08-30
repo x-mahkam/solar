@@ -49,5 +49,27 @@ class RandomRotate90:
         return image, mask
 
 
+class RandomBrightnessContrast:
+    """Jitter brightness/contrast of the (already [0,1]-scaled) image only.
+    GONG H-alpha frames vary in background noise/limb-darkening intensity
+    (per the competition's own "Main Challenges" notes); this is meant to
+    make the model robust to that rather than memorizing specific exposure
+    levels, which should help close the gap between local validation and
+    the real held-out test set."""
+
+    def __init__(self, brightness: float = 0.15, contrast: float = 0.15, p: float = 0.5):
+        self.brightness = brightness
+        self.contrast = contrast
+        self.p = p
+
+    def __call__(self, image, mask):
+        if random.random() < self.p:
+            contrast_factor = 1.0 + random.uniform(-self.contrast, self.contrast)
+            brightness_delta = random.uniform(-self.brightness, self.brightness)
+            mean = image.mean()
+            image = np.clip((image - mean) * contrast_factor + mean + brightness_delta, 0.0, 1.0)
+        return image, mask
+
+
 def default_train_transform() -> Compose:
-    return Compose([RandomHFlip(), RandomVFlip(), RandomRotate90()])
+    return Compose([RandomHFlip(), RandomVFlip(), RandomRotate90(), RandomBrightnessContrast()])

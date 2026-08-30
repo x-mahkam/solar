@@ -225,12 +225,55 @@ same `--threshold` / `--min-component-size` / `--closing-size` to
 
 Rough order of expected impact for further PQ gains, cheapest first:
 1. Post-processing tuning above (no retrain).
-2. Larger `--image-size` (768-1024) so thin barbs survive the resize.
-3. More capacity (`--base-ch 64`) and/or a loss better suited to thin
-   structures (Tversky, boundary loss) instead of plain `BCEDiceLoss`.
+2. **Crop-based training + tiled inference** (see below) -- addresses the
+   root cause: barbs are only a few pixels wide at 2048x2048 and a global
+   resize to 512-768px destroys them outright, which is why bumping
+   `--image-size` alone barely moved val IoU (0.5118 -> 0.5236). Training on
+   native-resolution crops keeps every barb pixel-exact.
+3. A loss suited to thin structures under class imbalance (`--loss tversky`)
+   instead of plain BCE+Dice.
 4. Architecture change -- EdgeAttNet-style edge-guided attention (see
    "Model upgrades" above); this is the one that requires real engineering
    work, not just hyperparameters.
+
+### Crop-based training + tiled inference
+
+Train on native-resolution random crops instead of a whole-image resize, and
+predict with a matching sliding-window (tiled) pass so the full 2048x2048
+image is covered without ever downsampling it:
+
+```bash
+python -m filament_seg.train \
+  --images-dir MAGFiLO_1.0_Kaggle_2026/train/train_images \
+  --ann-file MAGFiLO_1.0_Kaggle_2026/train/MAGFiLO_1.0_Annotations_kaggle2026_train.json \
+  --output-dir runs/baseline \
+  --epochs 50 --batch-size 16 --crop-size 512 --base-ch 32 \
+  --loss tversky --tversky-alpha 0.3 --tversky-beta 0.7
+
+python -m filament_seg.predict \
+  --images-dir MAGFiLO_1.0_Kaggle_2026/test/test_images \
+  --checkpoint runs/baseline/best.pt \
+  --tile-size 512 --tile-overlap 64 --tta --base-ch 32 \
+  --output submission.csv
+```
+
+Notes:
+- AMP (mixed precision) is on automatically on CUDA (`--no-amp` to disable);
+  it roughly halves memory use and speeds up training, which is what makes a
+  larger `--batch-size` viable at native resolution without OOM (unlike the
+  earlier whole-image `--image-size 768` run, which had to drop to
+  `--batch-size 4` and still barely fit in 15GB).
+- `--tile-overlap` should be generous enough that no filament falls entirely
+  within the discarded seam between tiles; 64-128px at `--tile-size 512` is
+  a reasonable start.
+- `filament_seg/tune_postprocess.py` also accepts `--tile-size`/`--tile-overlap`/`--tta`
+  so the threshold/min-size/closing sweep matches how `predict.py` will
+  actually run.
+- `RandomBrightnessContrast` was added to the default training augmentations
+  (`transforms.py`) to make the model robust to the background-noise/
+  exposure variation the competition's own "Main Challenges" section calls
+  out -- aimed at closing the gap between local validation PQ and the real
+  (lower) leaderboard score.
 
 ## Integrity note
 

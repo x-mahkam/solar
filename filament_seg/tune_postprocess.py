@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -33,6 +34,7 @@ from .dataset import FilamentTestDataset
 from .metrics import connected_components
 from .model import UNet
 from .rle import mask_to_coco_rle
+from .tiling import tiled_predict
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,7 +44,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--file-list", required=True, help="e.g. runs/baseline/val_file_names.txt")
     p.add_argument("--image-ids-file", required=True, help="e.g. runs/baseline/val_image_ids.txt")
-    p.add_argument("--image-size", type=int, default=512, help="inference resize, must match training")
+    p.add_argument("--image-size", type=int, default=512,
+                    help="whole-image resize target (legacy mode, ignored if --tile-size is given)")
+    p.add_argument("--tile-size", type=int, default=None,
+                    help="enable tiled native-resolution inference (should match training --crop-size)")
+    p.add_argument("--tile-overlap", type=int, default=64)
+    p.add_argument("--tta", action="store_true")
     p.add_argument("--base-ch", type=int, default=32)
     p.add_argument("--thresholds", type=float, nargs="+", default=[0.3, 0.4, 0.5, 0.6, 0.7])
     p.add_argument("--min-sizes", type=int, nargs="+", default=[0, 10, 30, 60, 100])
@@ -66,20 +73,30 @@ def main() -> None:
     with open(args.image_ids_file) as f:
         image_ids = [line.strip() for line in f if line.strip()]
 
-    ds = FilamentTestDataset(args.images_dir, image_size=args.image_size, file_names=file_names)
-
-    print(f"Running {len(ds)} images through the model once, caching probability maps...")
+    print(f"Running {len(file_names)} images through the model once, caching probability maps...")
     prob_maps: dict[str, np.ndarray] = {}
     sizes: dict[str, tuple[int, int]] = {}
-    with torch.no_grad():
-        for image_t, name, h, w in ds:
-            logits = model(image_t.unsqueeze(0).to(device))
-            prob = torch.sigmoid(logits)
-            prob = F.interpolate(prob, size=(int(h), int(w)), mode="bilinear", align_corners=False)
+    if args.tile_size:
+        images_dir = Path(args.images_dir)
+        for name in file_names:
+            prob, h, w = tiled_predict(
+                model, images_dir / name, tile_size=args.tile_size, overlap=args.tile_overlap,
+                device=device, tta=args.tta,
+            )
             stem = name.rsplit(".", 1)[0]
-            # quantize to uint8 to keep memory bounded across many full-res images
-            prob_maps[stem] = (prob[0, 0].cpu().numpy() * 255).astype(np.uint8)
-            sizes[stem] = (int(h), int(w))
+            prob_maps[stem] = (prob * 255).astype(np.uint8)
+            sizes[stem] = (h, w)
+    else:
+        ds = FilamentTestDataset(args.images_dir, image_size=args.image_size, file_names=file_names)
+        with torch.no_grad():
+            for image_t, name, h, w in ds:
+                logits = model(image_t.unsqueeze(0).to(device))
+                prob = torch.sigmoid(logits)
+                prob = F.interpolate(prob, size=(int(h), int(w)), mode="bilinear", align_corners=False)
+                stem = name.rsplit(".", 1)[0]
+                # quantize to uint8 to keep memory bounded across many full-res images
+                prob_maps[stem] = (prob[0, 0].cpu().numpy() * 255).astype(np.uint8)
+                sizes[stem] = (int(h), int(w))
 
     print("Building ground-truth dataframe...")
     gt_df = self_eval.build_gt_dataframe(args.ann_file, image_ids=image_ids)

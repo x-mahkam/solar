@@ -17,10 +17,18 @@ Predicted instances come from splitting the model's binary mask into
 connected components; this is a reasonable proxy but will under-segment two
 filaments that touch (see README "Where to take it from here").
 
-Example:
+Two inference modes:
+- Tiled (pass --tile-size): native-resolution sliding-window inference over
+  the full image -- use this for a checkpoint trained with --crop-size, so
+  thin barbs are never destroyed by a resize. Recommended.
+- Whole-image resize (default, --image-size): legacy mode matching a
+  checkpoint trained without --crop-size.
+
+Example (tiled, matching --crop-size 512 training):
     python -m filament_seg.predict \
         --images-dir data/test/test_images \
         --checkpoint runs/baseline/best.pt \
+        --tile-size 512 --tta \
         --output submission.csv
 """
 from __future__ import annotations
@@ -39,6 +47,7 @@ from .dataset import FilamentTestDataset
 from .metrics import connected_components
 from .model import UNet
 from .rle import mask_to_coco_rle
+from .tiling import tiled_predict
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,7 +55,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--images-dir", required=True)
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--output", default="submission.csv")
-    p.add_argument("--image-size", type=int, default=512)
+    p.add_argument("--image-size", type=int, default=512,
+                    help="whole-image resize target (legacy mode, ignored if --tile-size is given)")
+    p.add_argument("--tile-size", type=int, default=None,
+                    help="enable tiled native-resolution inference with this tile size "
+                         "(should match training --crop-size)")
+    p.add_argument("--tile-overlap", type=int, default=64)
+    p.add_argument("--tta", action="store_true",
+                    help="average predictions over horizontal+vertical flips (tiled mode only)")
     p.add_argument("--base-ch", type=int, default=32)
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--min-component-size", type=int, default=10,
@@ -63,6 +79,15 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _postprocess_to_rows(mask: np.ndarray, stem: str, closing_size: int, min_component_size: int) -> list[list[str]]:
+    if closing_size > 0:
+        structure = np.ones((closing_size, closing_size), dtype=bool)
+        mask = ndimage.binary_closing(mask, structure=structure)
+    components = connected_components(mask)
+    components = [c for c in components if c.sum() >= min_component_size]
+    return [[f"{stem}_{idx}", mask_to_coco_rle(comp.astype(np.uint8))] for idx, comp in enumerate(components, start=1)]
+
+
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
@@ -75,31 +100,40 @@ def main() -> None:
     if args.file_list:
         with open(args.file_list) as f:
             file_names = [line.strip() for line in f if line.strip()]
-    ds = FilamentTestDataset(args.images_dir, image_size=args.image_size, file_names=file_names)
-    loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     rows = []
-    with torch.no_grad():
-        for images, names, heights, widths in loader:
-            images = images.to(device)
-            logits = model(images)
-            probs = torch.sigmoid(logits)
+    if args.tile_size:
+        images_dir = Path(args.images_dir)
+        if file_names is not None:
+            paths = sorted(images_dir / name for name in file_names)
+        else:
+            paths = sorted(
+                p for p in images_dir.iterdir()
+                if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+            )
+        for path in paths:
+            prob_map, _, _ = tiled_predict(
+                model, path, tile_size=args.tile_size, overlap=args.tile_overlap,
+                device=device, batch_size=args.batch_size, tta=args.tta,
+            )
+            mask = prob_map > args.threshold
+            rows.extend(_postprocess_to_rows(mask, path.stem, args.closing_size, args.min_component_size))
+    else:
+        ds = FilamentTestDataset(args.images_dir, image_size=args.image_size, file_names=file_names)
+        loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=4)
+        with torch.no_grad():
+            for images, names, heights, widths in loader:
+                images = images.to(device)
+                logits = model(images)
+                probs = torch.sigmoid(logits)
 
-            for i in range(len(names)):
-                h, w = int(heights[i]), int(widths[i])
-                prob = probs[i, 0].unsqueeze(0).unsqueeze(0)
-                prob = F.interpolate(prob, size=(h, w), mode="bilinear", align_corners=False)
-                mask = (prob[0, 0].cpu().numpy() > args.threshold).astype(bool)
-                if args.closing_size > 0:
-                    structure = np.ones((args.closing_size, args.closing_size), dtype=bool)
-                    mask = ndimage.binary_closing(mask, structure=structure)
-
-                stem = Path(names[i]).stem
-                components = connected_components(mask)
-                components = [c for c in components if c.sum() >= args.min_component_size]
-                for idx, comp in enumerate(components, start=1):
-                    filament_id = f"{stem}_{idx}"
-                    rows.append([filament_id, mask_to_coco_rle(comp.astype(np.uint8))])
+                for i in range(len(names)):
+                    h, w = int(heights[i]), int(widths[i])
+                    prob = probs[i, 0].unsqueeze(0).unsqueeze(0)
+                    prob = F.interpolate(prob, size=(h, w), mode="bilinear", align_corners=False)
+                    mask = (prob[0, 0].cpu().numpy() > args.threshold)
+                    stem = Path(names[i]).stem
+                    rows.extend(_postprocess_to_rows(mask, stem, args.closing_size, args.min_component_size))
 
     with open(args.output, "w", newline="") as f:
         writer = csv.writer(f)

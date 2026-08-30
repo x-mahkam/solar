@@ -1,6 +1,19 @@
 """Train the U-Net baseline on filament-segmentation-2026 data.
 
-Example:
+Recommended: train on native-resolution crops (--crop-size) rather than a
+whole-image resize (--image-size) -- filament barbs are only a few pixels
+wide at the native 2048x2048 resolution and get destroyed by resizing down
+to 512-768px. Pair with tiled inference at test time (predict.py --tile-size
+matching --crop-size).
+
+Example (recommended, crop-based):
+    python -m filament_seg.train \
+        --images-dir data/train/images \
+        --ann-file data/train_annotations.json \
+        --output-dir runs/baseline \
+        --epochs 40 --batch-size 16 --crop-size 512 --loss tversky
+
+Example (legacy, whole-image resize):
     python -m filament_seg.train \
         --images-dir data/train/images \
         --ann-file data/train_annotations.json \
@@ -20,7 +33,7 @@ from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
 from .dataset import FilamentDataset
-from .losses import BCEDiceLoss
+from .losses import get_loss
 from .metrics import pixel_scores
 from .model import UNet
 from .transforms import default_train_transform
@@ -37,15 +50,25 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--images-dir", required=True)
     p.add_argument("--ann-file", required=True)
     p.add_argument("--output-dir", default="runs/baseline")
-    p.add_argument("--image-size", type=int, default=512)
+    p.add_argument("--image-size", type=int, default=512,
+                    help="whole-image resize target; ignored if --crop-size is given")
+    p.add_argument("--crop-size", type=int, default=None,
+                    help="train on random native-resolution crops of this size instead of "
+                         "resizing the whole image -- preserves thin filament barbs that a "
+                         "global resize would destroy. Pair with tiled inference at test time "
+                         "(predict.py --tile-size).")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--epochs", type=int, default=40)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--base-ch", type=int, default=32)
+    p.add_argument("--loss", choices=["bce_dice", "tversky"], default="bce_dice")
+    p.add_argument("--tversky-alpha", type=float, default=0.3, help="Tversky false-positive weight")
+    p.add_argument("--tversky-beta", type=float, default=0.7, help="Tversky false-negative weight (>alpha favors recall)")
     p.add_argument("--val-fraction", type=float, default=0.15)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--no-amp", action="store_true", help="disable automatic mixed precision (on by default on CUDA)")
     return p.parse_args()
 
 
@@ -55,18 +78,18 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    full_ds = FilamentDataset(args.images_dir, args.ann_file, image_size=args.image_size)
+    full_ds = FilamentDataset(args.images_dir, args.ann_file, image_size=args.image_size, crop_size=args.crop_size)
     n_val = max(1, int(len(full_ds) * args.val_fraction))
     n_train = len(full_ds) - n_val
     generator = torch.Generator().manual_seed(args.seed)
     train_subset, val_subset = random_split(full_ds, [n_train, n_val], generator=generator)
 
     train_ds = FilamentDataset(
-        args.images_dir, args.ann_file, image_size=args.image_size,
+        args.images_dir, args.ann_file, image_size=args.image_size, crop_size=args.crop_size,
         transform=default_train_transform(), image_ids=[full_ds.image_ids[i] for i in train_subset.indices],
     )
     val_ds = FilamentDataset(
-        args.images_dir, args.ann_file, image_size=args.image_size,
+        args.images_dir, args.ann_file, image_size=args.image_size, crop_size=args.crop_size,
         image_ids=[full_ds.image_ids[i] for i in val_subset.indices],
     )
 
@@ -86,9 +109,14 @@ def main() -> None:
 
     device = torch.device(args.device)
     model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch).to(device)
-    criterion = BCEDiceLoss()
+    criterion = get_loss(args.loss, tversky_alpha=args.tversky_alpha, tversky_beta=args.tversky_beta)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+
+    use_amp = device.type == "cuda" and not args.no_amp
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    if use_amp:
+        print("Using automatic mixed precision (AMP)")
 
     log_path = output_dir / "log.csv"
     best_iou = -1.0
@@ -103,10 +131,12 @@ def main() -> None:
             for images, masks, _ in train_bar:
                 images, masks = images.to(device), masks.to(device)
                 optimizer.zero_grad()
-                logits = model(images)
-                loss = criterion(logits, masks)
-                loss.backward()
-                optimizer.step()
+                with torch.amp.autocast("cuda", enabled=use_amp):
+                    logits = model(images)
+                    loss = criterion(logits, masks)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 train_loss += loss.item() * images.size(0)
                 train_bar.set_postfix(loss=f"{loss.item():.4f}")
             train_loss /= len(train_ds)
@@ -115,7 +145,7 @@ def main() -> None:
             val_loss = 0.0
             agg = {"iou": 0.0, "dice": 0.0, "precision": 0.0, "recall": 0.0}
             val_bar = tqdm(val_loader, desc=f"epoch {epoch}/{args.epochs} [val]", unit="batch")
-            with torch.no_grad():
+            with torch.no_grad(), torch.amp.autocast("cuda", enabled=use_amp):
                 for images, masks, _ in val_bar:
                     images, masks = images.to(device), masks.to(device)
                     logits = model(images)
