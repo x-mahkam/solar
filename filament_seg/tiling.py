@@ -16,6 +16,24 @@ from PIL import Image
 from .dataset import IMAGENET_MEAN, IMAGENET_STD
 
 
+def _d4_transforms() -> list[tuple]:
+    """The 8 symmetries of a square (dihedral group D4): 4 rotations, each
+    with and without a horizontal flip first. Tiles are square, so every
+    one of these is a valid test-time view of the same tile. Each entry is
+    (forward, inverse) operating on (B, 1, H, W) tensors."""
+    transforms = []
+    for k in range(4):
+        transforms.append((
+            lambda t, k=k: torch.rot90(t, k, dims=[2, 3]),
+            lambda t, k=k: torch.rot90(t, -k, dims=[2, 3]),
+        ))
+        transforms.append((
+            lambda t, k=k: torch.flip(torch.rot90(t, k, dims=[2, 3]), dims=[3]),
+            lambda t, k=k: torch.rot90(torch.flip(t, dims=[3]), -k, dims=[2, 3]),
+        ))
+    return transforms
+
+
 def _tile_starts(size: int, tile: int, stride: int) -> list[int]:
     if size <= tile:
         return [0]
@@ -36,7 +54,12 @@ def tiled_predict(
     tta: bool = False,
 ) -> tuple[np.ndarray, int, int]:
     """Returns (prob_map, height, width): a full-resolution float32
-    probability map in [0, 1] plus the original image dimensions."""
+    probability map in [0, 1] plus the original image dimensions.
+
+    With ``tta=True``, averages predictions over all 8 square symmetries
+    (4 rotations x optional horizontal flip) instead of a single forward
+    pass -- free accuracy since tiles are square, no cost besides 8x the
+    inference compute."""
     image = Image.open(image_path).convert("L")
     width, height = image.size
     image_np = np.asarray(image, dtype=np.float32) / 255.0
@@ -60,11 +83,14 @@ def tiled_predict(
             tiles.append(tile)
         batch_t = torch.from_numpy(np.stack(tiles)).unsqueeze(1).to(device)
 
-        probs = torch.sigmoid(model(batch_t))
         if tta:
-            probs_h = torch.flip(torch.sigmoid(model(torch.flip(batch_t, dims=[3]))), dims=[3])
-            probs_v = torch.flip(torch.sigmoid(model(torch.flip(batch_t, dims=[2]))), dims=[2])
-            probs = (probs + probs_h + probs_v) / 3
+            transforms = _d4_transforms()
+            probs = torch.zeros(batch_t.shape[0], 1, tile_size, tile_size, device=device)
+            for forward, inverse in transforms:
+                probs += inverse(torch.sigmoid(model(forward(batch_t))))
+            probs /= len(transforms)
+        else:
+            probs = torch.sigmoid(model(batch_t))
         probs = probs[:, 0].cpu().numpy()
 
         for (y, x), prob_tile in zip(batch_coords, probs):
