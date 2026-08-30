@@ -80,20 +80,58 @@ def _rles_to_layers(rles: list[str], height: int = 2048, width: int = 2048) -> n
     return masks.transpose(2, 0, 1).astype(np.float32)
 
 
-def _get_overlap_matrices(gt_layers: torch.Tensor, pred_layers: torch.Tensor):
-    n_gt, height, width = gt_layers.shape
+def _bbox(mask: np.ndarray) -> tuple[int, int, int, int] | None:
+    """(y0, y1, x0, x1) tight bounding box of a boolean mask's True pixels
+    (y1/x1 exclusive), or None if the mask is empty."""
+    ys, xs = np.nonzero(mask)
+    if ys.size == 0:
+        return None
+    return int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
+
+
+def _get_overlap_matrices(gt_layers: torch.Tensor, pred_layers: torch.Tensor) -> torch.Tensor:
+    """Pairwise IoU, restricted to each pair's own overlapping bounding box
+    instead of a dense matmul over the whole (e.g. 2048x2048 = ~4.2M pixel)
+    frame. Filaments are small and scattered across a large image, so most
+    GT/prediction pairs don't overlap at all and are skipped in O(1); this
+    gives bit-for-bit the same IoU values as the full-frame matmul (every
+    pixel excluded by the bbox crop is zero in the cropped-out layer, so it
+    can't contribute to that pair's intersection/union), just far faster --
+    the difference that made a --tile-size (2048x2048, not 512x512) sweep in
+    tune_postprocess.py impractically slow before this change.
+    """
+    n_gt = gt_layers.shape[0]
     n_pred = pred_layers.shape[0]
+    gt_np = gt_layers.numpy() > 0
+    pred_np = pred_layers.numpy() > 0
 
-    gt_flat = gt_layers.reshape(n_gt, height * width)
-    pred_flat = pred_layers.reshape(n_pred, height * width)
+    gt_areas = gt_np.reshape(n_gt, -1).sum(axis=1)
+    pred_areas = pred_np.reshape(n_pred, -1).sum(axis=1)
+    gt_boxes = [_bbox(gt_np[i]) for i in range(n_gt)]
+    pred_boxes = [_bbox(pred_np[j]) for j in range(n_pred)]
 
-    intersection = torch.matmul(gt_flat, pred_flat.t())
-    gt_areas = gt_flat.sum(dim=1).view(-1, 1)
-    pred_areas = pred_flat.sum(dim=1).view(1, -1)
-    union = gt_areas + pred_areas - intersection
+    iou_matrix = np.zeros((n_gt, n_pred), dtype=np.float32)
+    for i in range(n_gt):
+        gt_box = gt_boxes[i]
+        if gt_box is None:
+            continue
+        gy0, gy1, gx0, gx1 = gt_box
+        for j in range(n_pred):
+            pred_box = pred_boxes[j]
+            if pred_box is None:
+                continue
+            py0, py1, px0, px1 = pred_box
+            y0, y1 = max(gy0, py0), min(gy1, py1)
+            x0, x1 = max(gx0, px0), min(gx1, px1)
+            if y0 >= y1 or x0 >= x1:
+                continue  # bounding boxes don't overlap -> IoU is 0
+            inter = np.logical_and(gt_np[i, y0:y1, x0:x1], pred_np[j, y0:y1, x0:x1]).sum()
+            if inter == 0:
+                continue
+            union = gt_areas[i] + pred_areas[j] - inter
+            iou_matrix[i, j] = inter / union if union else 0.0
 
-    iou_matrix = torch.where(union == 0, torch.tensor(0.0), intersection / union)
-    return iou_matrix
+    return torch.from_numpy(iou_matrix)
 
 
 def _fp_count_hit(hit_matrix: torch.Tensor) -> int:
