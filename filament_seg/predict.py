@@ -44,7 +44,7 @@ from scipy import ndimage
 from torch.utils.data import DataLoader
 
 from .dataset import FilamentTestDataset
-from .metrics import connected_components
+from .metrics import separate_touching_instances
 from .model import UNet
 from .rle import mask_to_coco_rle
 from .tiling import tiled_predict
@@ -64,6 +64,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--tta", action="store_true",
                     help="average predictions over horizontal+vertical flips (tiled mode only)")
     p.add_argument("--base-ch", type=int, default=32)
+    p.add_argument("--use-attention", action="store_true",
+                    help="must match what the checkpoint was trained with (train.py --use-attention)")
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--min-component-size", type=int, default=10,
                     help="drop predicted connected components smaller than this many pixels")
@@ -71,6 +73,9 @@ def parse_args() -> argparse.Namespace:
                     help="morphological closing kernel size before splitting into components "
                          "(0 = off); merges nearby fragments of the same filament, reducing "
                          "over-segmentation -- tune with filament_seg.tune_postprocess")
+    p.add_argument("--erosion-size", type=int, default=0,
+                    help="erode-then-regrow kernel size (0 = off) to split filaments that touch "
+                         "into separate instances before labeling -- tune with tune_postprocess")
     p.add_argument("--file-list", default=None,
                     help="optional text file, one image filename per line, to restrict prediction "
                          "to a subset (e.g. runs/baseline/val_file_names.txt for local self-evaluation)")
@@ -79,11 +84,13 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _postprocess_to_rows(mask: np.ndarray, stem: str, closing_size: int, min_component_size: int) -> list[list[str]]:
+def _postprocess_to_rows(
+    mask: np.ndarray, stem: str, closing_size: int, min_component_size: int, erosion_size: int = 0
+) -> list[list[str]]:
     if closing_size > 0:
         structure = np.ones((closing_size, closing_size), dtype=bool)
         mask = ndimage.binary_closing(mask, structure=structure)
-    components = connected_components(mask)
+    components = separate_touching_instances(mask, erosion_size=erosion_size)
     components = [c for c in components if c.sum() >= min_component_size]
     return [[f"{stem}_{idx}", mask_to_coco_rle(comp.astype(np.uint8))] for idx, comp in enumerate(components, start=1)]
 
@@ -92,7 +99,7 @@ def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
 
-    model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch).to(device)
+    model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch, use_attention=args.use_attention).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
     model.eval()
 
@@ -117,7 +124,7 @@ def main() -> None:
                 device=device, batch_size=args.batch_size, tta=args.tta,
             )
             mask = prob_map > args.threshold
-            rows.extend(_postprocess_to_rows(mask, path.stem, args.closing_size, args.min_component_size))
+            rows.extend(_postprocess_to_rows(mask, path.stem, args.closing_size, args.min_component_size, args.erosion_size))
     else:
         ds = FilamentTestDataset(args.images_dir, image_size=args.image_size, file_names=file_names)
         loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=4)
@@ -133,7 +140,7 @@ def main() -> None:
                     prob = F.interpolate(prob, size=(h, w), mode="bilinear", align_corners=False)
                     mask = (prob[0, 0].cpu().numpy() > args.threshold)
                     stem = Path(names[i]).stem
-                    rows.extend(_postprocess_to_rows(mask, stem, args.closing_size, args.min_component_size))
+                    rows.extend(_postprocess_to_rows(mask, stem, args.closing_size, args.min_component_size, args.erosion_size))
 
     with open(args.output, "w", newline="") as f:
         writer = csv.writer(f)

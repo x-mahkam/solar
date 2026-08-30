@@ -283,6 +283,28 @@ Notes:
   out -- aimed at closing the gap between local validation PQ and the real
   (lower) leaderboard score.
 
+### Attention gates + touching-instance separation
+
+Two more additions, usable together with crop/tiled training above:
+
+- **`--use-attention`** (train.py/predict.py/tune_postprocess.py, must match
+  between training and inference): adds Attention U-Net-style gates on the
+  skip connections (Oktay et al. 2018, arxiv.org/abs/1804.03999) --
+  each gate learns to weight encoder features by relevance to the decoder's
+  context before concatenating them, which tends to help the model focus on
+  small/thin structures against background clutter. This is a well-documented
+  stand-in for EdgeAttNet's own attention mechanism, whose exact
+  implementation isn't public.
+- **`--erosion-size`** (predict.py/tune_postprocess.py, no retraining
+  needed): splits filaments that touch into separate predicted instances --
+  erode the mask first (breaks thin bridges between adjacent filaments),
+  label the eroded mask, then grow each label back out to its original
+  extent. Verified on a synthetic case (two 10x10 blobs joined by a 1px
+  bridge): plain connected-components merges them into 1 instance;
+  `separate_touching_instances` with `erosion_size=3` correctly recovers 2,
+  each at their full original size. Sweep it alongside threshold/min-size/
+  closing in `tune_postprocess.py --erosion-sizes`.
+
 ## Integrity note
 
 While setting this up, a *different, unrelated* Kaggle dataset containing

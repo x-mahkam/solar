@@ -97,6 +97,28 @@ def connected_components(mask: np.ndarray) -> list[np.ndarray]:
     return components
 
 
+def separate_touching_instances(mask: np.ndarray, erosion_size: int = 0) -> list[np.ndarray]:
+    """Split a binary mask into instances, optionally separating filaments
+    that touch: erode first (breaks thin bridges between adjacent
+    filaments), label the eroded mask, then grow each label back out to its
+    original extent (clipped to the original mask) so instance shapes aren't
+    permanently shrunk. A simple, well-known heuristic (not as principled as
+    a learned watershed/energy map, but needs no retraining or extra model
+    output) for reducing the over-merging connected_components alone
+    produces on touching instances.
+
+    ``erosion_size=0`` is a no-op, equivalent to plain ``connected_components``.
+    """
+    if erosion_size <= 0:
+        return connected_components(mask)
+
+    from scipy import ndimage
+    structure = np.ones((erosion_size, erosion_size), dtype=bool)
+    eroded = ndimage.binary_erosion(mask, structure=structure)
+    seeds = connected_components(eroded)
+    return [ndimage.binary_dilation(seed, structure=structure) & mask for seed in seeds]
+
+
 def _iou(a: np.ndarray, b: np.ndarray) -> float:
     inter = np.logical_and(a, b).sum()
     union = np.logical_or(a, b).sum()

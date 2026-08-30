@@ -65,6 +65,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=40)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--base-ch", type=int, default=32)
+    p.add_argument("--use-attention", action="store_true",
+                    help="add Attention U-Net-style gates on the skip connections (Oktay et al. "
+                         "2018) -- helps focus on small/thin structures against clutter. Pass the "
+                         "same flag to predict.py/tune_postprocess.py to load this checkpoint.")
     p.add_argument("--loss", choices=["bce_dice", "tversky"], default="bce_dice")
     p.add_argument("--tversky-alpha", type=float, default=0.3, help="Tversky false-positive weight")
     p.add_argument("--tversky-beta", type=float, default=0.7, help="Tversky false-negative weight (>alpha favors recall)")
@@ -115,7 +119,7 @@ def main() -> None:
                              num_workers=args.num_workers)
 
     device = torch.device(args.device)
-    model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch).to(device)
+    model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch, use_attention=args.use_attention).to(device)
     criterion = get_loss(args.loss, tversky_alpha=args.tversky_alpha, tversky_beta=args.tversky_beta)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)

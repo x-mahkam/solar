@@ -31,7 +31,7 @@ from scipy import ndimage
 
 from . import self_eval
 from .dataset import FilamentTestDataset
-from .metrics import connected_components
+from .metrics import separate_touching_instances
 from .model import UNet
 from .rle import mask_to_coco_rle
 from .tiling import tiled_predict
@@ -51,10 +51,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--tile-overlap", type=int, default=64)
     p.add_argument("--tta", action="store_true")
     p.add_argument("--base-ch", type=int, default=32)
+    p.add_argument("--use-attention", action="store_true",
+                    help="must match what the checkpoint was trained with (train.py --use-attention)")
     p.add_argument("--thresholds", type=float, nargs="+", default=[0.3, 0.4, 0.5, 0.6, 0.7])
     p.add_argument("--min-sizes", type=int, nargs="+", default=[0, 10, 30, 60, 100])
     p.add_argument("--closing-sizes", type=int, nargs="+", default=[0, 3, 5],
                     help="morphological closing kernel size (0 = off); merges nearby fragments")
+    p.add_argument("--erosion-sizes", type=int, nargs="+", default=[0, 3, 5],
+                    help="erode-then-regrow kernel size (0 = off); splits touching filaments")
     p.add_argument("--output", default="tune_results.csv")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     return p.parse_args()
@@ -64,7 +68,7 @@ def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
 
-    model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch).to(device)
+    model = UNet(in_channels=1, num_classes=1, base_ch=args.base_ch, use_attention=args.use_attention).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
     model.eval()
 
@@ -101,16 +105,16 @@ def main() -> None:
     print("Building ground-truth dataframe...")
     gt_df = self_eval.build_gt_dataframe(args.ann_file, image_ids=image_ids)
 
-    combos = list(itertools.product(args.thresholds, args.min_sizes, args.closing_sizes))
+    combos = list(itertools.product(args.thresholds, args.min_sizes, args.closing_sizes, args.erosion_sizes))
     results = []
-    for threshold, min_size, closing_size in combos:
+    for threshold, min_size, closing_size, erosion_size in combos:
         rows = []
         for stem, prob_u8 in prob_maps.items():
             binary = prob_u8 > int(threshold * 255)
             if closing_size > 0:
                 structure = np.ones((closing_size, closing_size), dtype=bool)
                 binary = ndimage.binary_closing(binary, structure=structure)
-            components = connected_components(binary)
+            components = separate_touching_instances(binary, erosion_size=erosion_size)
             components = [c for c in components if c.sum() >= min_size]
             for idx, comp in enumerate(components, start=1):
                 rows.append({
@@ -122,16 +126,16 @@ def main() -> None:
         pq = self_eval.panoptic_quality_from_dataframes(gt_df, pred_df, height=h, width=w)
         results.append({
             "threshold": threshold, "min_size": min_size, "closing_size": closing_size,
-            "n_predicted": len(pred_df), "pq": pq,
+            "erosion_size": erosion_size, "n_predicted": len(pred_df), "pq": pq,
         })
         print(f"threshold={threshold} min_size={min_size} closing={closing_size} "
-              f"n_pred={len(pred_df)} PQ={pq:.4f}")
+              f"erosion={erosion_size} n_pred={len(pred_df)} PQ={pq:.4f}")
 
     results_df = pd.DataFrame(results).sort_values("pq", ascending=False)
     results_df.to_csv(args.output, index=False)
     best = results_df.iloc[0]
     print(f"\nBest: threshold={best.threshold} min_size={int(best.min_size)} "
-          f"closing_size={int(best.closing_size)} -> PQ={best.pq:.4f}")
+          f"closing_size={int(best.closing_size)} erosion_size={int(best.erosion_size)} -> PQ={best.pq:.4f}")
     print(f"Full results written to {args.output}")
 
 
