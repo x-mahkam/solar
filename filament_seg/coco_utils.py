@@ -75,6 +75,21 @@ def _polygon_rings(segmentation: Any) -> list[list[float]]:
     return []
 
 
+def polygon_bounds(segmentation: Any) -> tuple[float, float, float, float] | None:
+    """(min_x, min_y, max_x, max_y) over every ring of a segmentation, or
+    None if it has no usable polygons. Computed directly from the polygon
+    coordinates rather than trusting a possibly-absent/differently-keyed
+    ``bbox`` field, so it works regardless of the exact annotation schema."""
+    xs: list[float] = []
+    ys: list[float] = []
+    for ring in _polygon_rings(segmentation):
+        xs.extend(ring[0::2])
+        ys.extend(ring[1::2])
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def polygons_to_mask(
     segmentation: Any, height: int, width: int
 ) -> np.ndarray:

@@ -36,6 +36,7 @@ class FilamentDataset(Dataset):
         ann_file: str | Path,
         image_size: int = 512,
         crop_size: int | None = None,
+        positive_crop_prob: float = 0.8,
         transform: Callable | None = None,
         image_ids: list[int] | None = None,
     ):
@@ -43,10 +44,19 @@ class FilamentDataset(Dataset):
         crop instead of resizing the whole image -- thin filament barbs (a few
         pixels wide at 2048x2048) survive a crop but are destroyed by a global
         resize down to ``image_size``. Use with a matching tiled inference pass
-        (filament_seg.tiling) at test time to cover the full image."""
+        (filament_seg.tiling) at test time to cover the full image.
+
+        Filaments cover a small fraction of each 2048x2048 frame, so a purely
+        uniform-random crop would mostly land on empty background and waste
+        training signal. With probability ``positive_crop_prob`` the crop is
+        instead centered (with jitter) on a randomly chosen filament in the
+        image, guaranteeing it's actually visible in most training samples;
+        the rest stay fully random so the model still sees pure-background
+        negatives for calibration."""
         self.images_dir = Path(images_dir)
         self.image_size = image_size
         self.crop_size = crop_size
+        self.positive_crop_prob = positive_crop_prob
         self.transform = transform
 
         coco = coco_utils.load_coco(ann_file)
@@ -73,8 +83,19 @@ class FilamentDataset(Dataset):
 
         if self.crop_size is not None:
             c = self.crop_size
-            top = random.randint(0, max(0, height - c))
-            left = random.randint(0, max(0, width - c))
+            max_top, max_left = max(0, height - c), max(0, width - c)
+            bounds = None
+            if anns and random.random() < self.positive_crop_prob:
+                bounds = coco_utils.polygon_bounds(random.choice(anns)["segmentation"])
+            if bounds is not None:
+                x0, y0, x1, y1 = bounds
+                cx = random.uniform(x0, x1) + random.uniform(-c * 0.25, c * 0.25)
+                cy = random.uniform(y0, y1) + random.uniform(-c * 0.25, c * 0.25)
+                top = int(np.clip(cy - c / 2, 0, max_top))
+                left = int(np.clip(cx - c / 2, 0, max_left))
+            else:
+                top = random.randint(0, max_top)
+                left = random.randint(0, max_left)
             image_np = np.asarray(image, dtype=np.float32)[top:top + c, left:left + c] / 255.0
             mask_np = mask[top:top + c, left:left + c].astype(np.float32)
             if image_np.shape != (c, c):  # image smaller than crop_size: pad

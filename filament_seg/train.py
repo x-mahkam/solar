@@ -57,6 +57,10 @@ def parse_args() -> argparse.Namespace:
                          "resizing the whole image -- preserves thin filament barbs that a "
                          "global resize would destroy. Pair with tiled inference at test time "
                          "(predict.py --tile-size).")
+    p.add_argument("--positive-crop-prob", type=float, default=0.8,
+                    help="with --crop-size, fraction of crops centered (with jitter) on a "
+                         "filament rather than fully random -- filaments cover a small fraction "
+                         "of each frame, so pure random crops mostly land on empty background")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--epochs", type=int, default=40)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -78,7 +82,8 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    full_ds = FilamentDataset(args.images_dir, args.ann_file, image_size=args.image_size, crop_size=args.crop_size)
+    full_ds = FilamentDataset(args.images_dir, args.ann_file, image_size=args.image_size,
+                               crop_size=args.crop_size, positive_crop_prob=args.positive_crop_prob)
     n_val = max(1, int(len(full_ds) * args.val_fraction))
     n_train = len(full_ds) - n_val
     generator = torch.Generator().manual_seed(args.seed)
@@ -86,10 +91,12 @@ def main() -> None:
 
     train_ds = FilamentDataset(
         args.images_dir, args.ann_file, image_size=args.image_size, crop_size=args.crop_size,
+        positive_crop_prob=args.positive_crop_prob,
         transform=default_train_transform(), image_ids=[full_ds.image_ids[i] for i in train_subset.indices],
     )
     val_ds = FilamentDataset(
         args.images_dir, args.ann_file, image_size=args.image_size, crop_size=args.crop_size,
+        positive_crop_prob=args.positive_crop_prob,
         image_ids=[full_ds.image_ids[i] for i in val_subset.indices],
     )
 

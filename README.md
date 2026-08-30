@@ -258,6 +258,14 @@ python -m filament_seg.predict \
 ```
 
 Notes:
+- **Positive-biased crop sampling** (`--positive-crop-prob`, default 0.8):
+  filaments cover a small fraction of a 2048x2048 frame, so purely random
+  512x512 crops mostly land on empty background -- verified on synthetic
+  data at the same sparsity as the real dataset, only 35.5% of pure-random
+  crops contained any filament pixels at all, vs. 88.5% once crops are
+  centered (with jitter) on a randomly chosen filament most of the time.
+  The remaining crops stay fully random so the model still sees
+  pure-background negatives.
 - AMP (mixed precision) is on automatically on CUDA (`--no-amp` to disable);
   it roughly halves memory use and speeds up training, which is what makes a
   larger `--batch-size` viable at native resolution without OOM (unlike the
