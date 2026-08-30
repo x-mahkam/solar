@@ -34,6 +34,19 @@ from . import coco_utils
 from .rle import mask_to_coco_rle
 
 
+def _resolve_image_id(image_id, images: dict) -> tuple:
+    """image_ids passed in (e.g. read from a text file) are always strings;
+    COCO image ids are strings in the real MAGFiLO data but may be JSON
+    numbers (-> python int) in other releases/synthetic data, so match
+    flexibly rather than assuming the caller's type matches the JSON's."""
+    if image_id in images:
+        return image_id, images[image_id]
+    for candidate in (str(image_id), int(image_id) if str(image_id).lstrip("-").isdigit() else None):
+        if candidate is not None and candidate in images:
+            return candidate, images[candidate]
+    raise KeyError(f"image_id {image_id!r} not found")
+
+
 def build_gt_dataframe(ann_file: str, image_ids: list[str] | None = None) -> pd.DataFrame:
     """Ground-truth dataframe in the same (filament_id, segmentation_rle)
     schema as the competition's submission format, built from a COCO
@@ -45,21 +58,9 @@ def build_gt_dataframe(ann_file: str, image_ids: list[str] | None = None) -> pd.
 
     ids = image_ids if image_ids is not None else list(images.keys())
 
-    # image_ids passed in (e.g. read from a text file) are always strings;
-    # COCO image ids are strings in the real MAGFiLO data but may be JSON
-    # numbers (-> python int) in other releases/synthetic data, so match
-    # flexibly rather than assuming the caller's type matches the JSON's.
-    def _resolve(image_id):
-        if image_id in images:
-            return image_id, images[image_id]
-        for candidate in (str(image_id), int(image_id) if str(image_id).lstrip("-").isdigit() else None):
-            if candidate is not None and candidate in images:
-                return candidate, images[candidate]
-        raise KeyError(f"image_id {image_id!r} not found in {ann_file}")
-
     rows = []
     for raw_id in ids:
-        image_id, info = _resolve(raw_id)
+        image_id, info = _resolve_image_id(raw_id, images)
         height, width = info["height"], info["width"]
         for idx, ann in enumerate(anns_by_image.get(image_id, []), start=1):
             mask = coco_utils.polygons_to_mask(ann["segmentation"], height, width)
@@ -68,6 +69,29 @@ def build_gt_dataframe(ann_file: str, image_ids: list[str] | None = None) -> pd.
                 "segmentation_rle": mask_to_coco_rle(mask),
             })
     return pd.DataFrame(rows, columns=["filament_id", "segmentation_rle"])
+
+
+def build_gt_masks(ann_file: str, image_ids: list[str] | None = None) -> dict[str, list[np.ndarray]]:
+    """Ground truth as {annotator_image_id: [instance_mask, ...]} -- the
+    same (COCO ``images[].id``) grouping ``build_gt_dataframe`` encodes into
+    filament_id strings, but as raw numpy masks with no RLE round-trip.
+    For fast repeated scoring (e.g. filament_seg.tune_postprocess's
+    parameter sweep) via ``panoptic_quality_from_masks`` below."""
+    coco = coco_utils.load_coco(ann_file)
+    images = coco_utils.index_images(coco)
+    anns_by_image = coco_utils.index_annotations(coco)
+
+    ids = image_ids if image_ids is not None else list(images.keys())
+
+    out: dict[str, list[np.ndarray]] = {}
+    for raw_id in ids:
+        image_id, info = _resolve_image_id(raw_id, images)
+        height, width = info["height"], info["width"]
+        out[str(image_id)] = [
+            coco_utils.polygons_to_mask(ann["segmentation"], height, width)
+            for ann in anns_by_image.get(image_id, [])
+        ]
+    return out
 
 
 # --- Faithful port of the organizers' self-evaluation notebook below ---
@@ -192,6 +216,55 @@ def get_pq_score(overlap_df: pd.DataFrame, iou_threshold: float = 0.5) -> float:
 def panoptic_quality_from_dataframes(gt_df: pd.DataFrame, pred_df: pd.DataFrame, height: int = 2048, width: int = 2048) -> float:
     overlap_df = get_overlap_df(gt_df, pred_df, height, width)
     return get_pq_score(overlap_df)
+
+
+def panoptic_quality_from_masks(
+    gt_masks: dict[str, list[np.ndarray]],
+    pred_masks: dict[str, list[np.ndarray]],
+    iou_threshold: float = 0.5,
+) -> float:
+    """Same pooled-PQ formula as ``panoptic_quality_from_dataframes``
+    (identical matching logic, verified to agree exactly), but operating
+    directly on numpy instance masks -- no RLE encode/decode round-trip.
+    Built for repeated scoring in a hot loop (tune_postprocess.py's
+    threshold/min-size/closing/erosion sweep), where serializing every
+    candidate mask to an RLE string just to immediately decode it back was
+    the dominant cost.
+
+    ``gt_masks`` keys are the COCO ``images[].id`` values (e.g. from
+    ``build_gt_masks``), which carry an "<annotator>-<image_id>" prefix in
+    real MAGFiLO data; ``pred_masks`` keys are plain ``<image_id>``. Matched
+    by stripping the annotator prefix off the GT side, same as
+    ``get_overlap_df``.
+    """
+    tp_ious: list[float] = []
+    fp_count = 0
+    fn_count = 0
+
+    for annotator_image, gt_list in gt_masks.items():
+        image_id = annotator_image.split("-", maxsplit=1)[-1]
+        pred_list = pred_masks.get(image_id, [])
+        n_gt, n_pred = len(gt_list), len(pred_list)
+
+        if n_gt == 0:
+            fp_count += n_pred
+            continue
+        if n_pred == 0:
+            fn_count += n_gt
+            continue
+
+        gt_layers = torch.from_numpy(np.stack(gt_list).astype(np.float32))
+        pred_layers = torch.from_numpy(np.stack(pred_list).astype(np.float32))
+        iou_matrix = _get_overlap_matrices(gt_layers, pred_layers)
+
+        hit_matrix = iou_matrix > iou_threshold
+        tp_ious.extend(iou_matrix[hit_matrix].tolist())
+        fp_count += _fp_count_hit(hit_matrix)
+        fn_count += _fn_count_hit(hit_matrix)
+
+    tp_count = len(tp_ious)
+    denominator = tp_count + 0.5 * fp_count + 0.5 * fn_count
+    return sum(tp_ious) / denominator if denominator > 0 else 0.0
 
 
 def _main() -> None:

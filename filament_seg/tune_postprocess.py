@@ -34,7 +34,6 @@ from . import self_eval
 from .dataset import FilamentTestDataset
 from .metrics import separate_touching_instances
 from .model import UNet
-from .rle import mask_to_coco_rle
 from .tiling import tiled_predict
 
 
@@ -107,14 +106,15 @@ def main() -> None:
                 prob_maps[stem] = (prob[0, 0].cpu().numpy() * 255).astype(np.uint8)
                 sizes[stem] = (int(h), int(w))
 
-    print("Building ground-truth dataframe...")
-    gt_df = self_eval.build_gt_dataframe(args.ann_file, image_ids=image_ids)
+    print("Building ground-truth masks...")
+    gt_masks = self_eval.build_gt_masks(args.ann_file, image_ids=image_ids)
 
     combos = list(itertools.product(args.thresholds, args.min_sizes, args.closing_sizes, args.erosion_sizes))
     print(f"Sweeping {len(combos)} post-processing combinations...")
     results = []
     for threshold, min_size, closing_size, erosion_size in tqdm(combos, unit="combo"):
-        rows = []
+        pred_masks: dict[str, list[np.ndarray]] = {}
+        n_predicted = 0
         for stem, prob_u8 in prob_maps.items():
             binary = prob_u8 > int(threshold * 255)
             if closing_size > 0:
@@ -122,20 +122,18 @@ def main() -> None:
                 binary = ndimage.binary_closing(binary, structure=structure)
             components = separate_touching_instances(binary, erosion_size=erosion_size)
             components = [c for c in components if c.sum() >= min_size]
-            for idx, comp in enumerate(components, start=1):
-                rows.append({
-                    "filament_id": f"{stem}_{idx}",
-                    "segmentation_rle": mask_to_coco_rle(comp.astype(np.uint8)),
-                })
-        pred_df = pd.DataFrame(rows, columns=["filament_id", "segmentation_rle"])
-        h, w = next(iter(sizes.values()))
-        pq = self_eval.panoptic_quality_from_dataframes(gt_df, pred_df, height=h, width=w)
+            pred_masks[stem] = components
+            n_predicted += len(components)
+        # no RLE encode/decode round-trip here -- panoptic_quality_from_masks
+        # scores directly from the numpy masks above, which is what made this
+        # sweep practical at native (tiled) 2048x2048 resolution
+        pq = self_eval.panoptic_quality_from_masks(gt_masks, pred_masks)
         results.append({
             "threshold": threshold, "min_size": min_size, "closing_size": closing_size,
-            "erosion_size": erosion_size, "n_predicted": len(pred_df), "pq": pq,
+            "erosion_size": erosion_size, "n_predicted": n_predicted, "pq": pq,
         })
         tqdm.write(f"threshold={threshold} min_size={min_size} closing={closing_size} "
-                   f"erosion={erosion_size} n_pred={len(pred_df)} PQ={pq:.4f}")
+                   f"erosion={erosion_size} n_pred={n_predicted} PQ={pq:.4f}")
 
     results_df = pd.DataFrame(results).sort_values("pq", ascending=False)
     results_df.to_csv(args.output, index=False)
