@@ -286,19 +286,37 @@ function buildEar(H, s) {
   o.drum = H.el('path', { d: '', fill: 'none', stroke: '#ffd36a', 'stroke-width': 7, 'stroke-linecap': 'round' }, s);
   o.outM = []; for (let i = 0; i < 40; i++) o.outM.push({ e: H.el('circle', { r: 6, fill: '#9fd2ff' }, s), x: Math.random(), y: Math.random(), vx: Math.random() - .5, vy: Math.random() - .5 });
   o.inM = []; for (let i = 0; i < 40; i++) o.inM.push({ e: H.el('circle', { r: 6, fill: '#ffb38a' }, s), a: Math.random() * 6.28, r: Math.sqrt(Math.random()), va: (Math.random() - .5) * 2, vr: Math.random() * 6.28 });
+  // Yevstaxiy nayi orqali oqayotgan havo zarralari (o'rta quloq havosi rangida)
+  o.flow = []; for (let i = 0; i < 10; i++) o.flow.push(H.el('circle', { r: 6, fill: '#ffb38a', opacity: 0 }, s));
   o.pop = H.el('circle', { cx: 482, cy: 280, r: 10, fill: 'none', stroke: '#fff', 'stroke-width': 4, opacity: 0 }, s);
   return o;
 }
-function drawEar(o, t, dP, open, tt) {
-  // dP > 0: ichkarida bosim ko'p (ko'tarilish) -> parda tashqariga (chapga) egiladi
+function drawEar(o, t, Pout, Pin, flow, open, tt) {
+  // Pout: tashqi (salon) havo zichligi, Pin: o'rta quloq havosi zichligi (0.35..1, nisbiy).
+  // Pin > Pout (ko'tarilish) -> parda tashqariga (chapga) egiladi; Pin < Pout (qo'nish) -> ichkariga.
+  const dP = (Pin - Pout) / 0.65 * 0.9;
   const b = Math.max(-1, Math.min(1, dP)) * 34;
   o.drum.setAttribute('d', `M478 222 Q${478 - b * 2} 280 478 338`);
-  const nOut = Math.round(40 * Math.max(0.35, Math.min(1, 1 - Math.max(0, dP) * 0.9 + Math.max(0, -dP) * 0))), nIn = Math.round(40 * Math.max(0.35, Math.min(1, 1 + Math.min(0, dP) * 0.9)));
+  const nOut = 40 * Pout, nIn = 40 * Pin;
   o.outM.forEach((q, i) => { let x = q.x + q.vx * tt * 0.4, y = q.y + q.vy * tt * 0.4; x = Math.abs(((x % 2) + 2) % 2 - 1); y = Math.abs(((y % 2) + 2) % 2 - 1);
-    const px = 20 + x * 440, py = 215 + y * 130 + (px / 470) * 0; q.e.setAttribute('cx', px.toFixed(1)); q.e.setAttribute('cy', (215 + 15 * px / 470 + y * (130 - 30 * px / 470)).toFixed(1)); q.e.setAttribute('opacity', i < nOut ? 0.9 : 0); });
+    const px = 20 + x * 440; q.e.setAttribute('cx', px.toFixed(1)); q.e.setAttribute('cy', (215 + 15 * px / 470 + y * (130 - 30 * px / 470)).toFixed(1));
+    q.e.setAttribute('opacity', (0.9 * Math.max(0, Math.min(1, nOut - i))).toFixed(3)); });
   o.inM.forEach((q, i) => { const a = q.a + q.va * tt, r = 110 * Math.abs(Math.sin(q.r * 3 + tt * 0.7 + q.vr));
-    q.e.setAttribute('cx', (600 + Math.cos(a) * r).toFixed(1)); q.e.setAttribute('cy', (280 + Math.sin(a) * r).toFixed(1)); q.e.setAttribute('opacity', i < nIn ? 0.9 : 0); });
+    q.e.setAttribute('cx', (600 + Math.cos(a) * r).toFixed(1)); q.e.setAttribute('cy', (280 + Math.sin(a) * r).toFixed(1));
+    q.e.setAttribute('opacity', (0.9 * Math.max(0, Math.min(1, nIn - i))).toFixed(3)); });
   o.valve.setAttribute('x2', open ? 650 : 676); o.valve.setAttribute('y2', open ? 440 : 400);
+  // nay ichidagi oqim: flow > 0 -> o'rta quloqdan tomoqqa (chiqadi), flow < 0 -> tomoqdan o'rta quloqqa (kiradi)
+  const N = o.flow.length, mag = Math.min(1, Math.abs(flow)), dir = flow >= 0 ? 1 : -1;
+  o.flow.forEach((e, i) => {
+    let u = ((tt * 0.85 + i / N) % 1 + 1) % 1; if (dir < 0) u = 1 - u;
+    const v = -0.22 + 1.22 * u;                       // v<0: bo'shliq ichida, 0..1: nay bo'ylab
+    let x, y;
+    if (v < 0) { const w = -v / 0.22; x = 640 - 22 * w; y = 400 - 60 * w; }
+    else { const m = 1 - v; x = m * m * 640 + 2 * m * v * 690 + v * v * 730; y = m * m * 400 + 2 * m * v * 500 + v * v * 586; }
+    e.setAttribute('cx', x.toFixed(1)); e.setAttribute('cy', y.toFixed(1));
+    const vis = Math.max(0, Math.min(1, mag * N - i)) * Math.sin(Math.PI * u);
+    e.setAttribute('opacity', (open ? 0.95 * vis : 0).toFixed(3));
+  });
 }
 return {
   init(H) {
@@ -308,6 +326,7 @@ return {
     el.labs = [[480, 60, 'Quloq tuzilishi (kesim)', '#ffc83d', 'middle'], [40, 180, 'Tashqi havo', '#9fd2ff', 'start'], [600, 128, 'O‘rta quloq', '#ffb38a', 'middle'],
       [420, 390, 'Quloq pardasi', '#ffd36a', 'end'], [830, 380, 'Ichki quloq', '#e67e6a', 'middle'], [700, 600, 'Yevstaxiy nayi → tomoq', '#ff8d7a', 'end']].map(([x, y, tx, c, a]) => H.tag(x, y, tx, c, s, a, 26));
     el.dChip = H.tag(480, 60, 'Bosim tez o‘zgaradi → parda egiladi', '#ffc83d', s, 'middle', 28);
+    el.fOut = H.tag(748, 505, 'havo chiqadi ↓', '#ffb38a', s, 'start', 24);
     el.sChip = H.tag(480, 60, 'Yutinish → nay ochiladi → bosim tenglashadi', '#ffc83d', s, 'middle', 26);
     el.lChip = H.tag(540, 930, 'Qo‘nishda: tez-tez yuting', '#ffc83d', H.$('ov'), 'middle', 30);
     el.yut = H.tag(780, 610, '', '#fff', H.$('ov'), 'middle', 26);
@@ -337,17 +356,27 @@ return {
     op('cEar', win(T.ear + 0.1, T.land, t, 0.5, 0.4));
     const labT = [T.l1 - 1, T.l1, T.l2, T.l3, T.l4, T.l5];
     el.labs.forEach((g, i) => sop(g, ramp(labT[i], labT[i] + 0.5, t) * (i === 0 ? 1 - ramp(T.diff, T.diff + 0.4, t) : 1)));
-    let dP = 0, open = false;
-    if (t > T.diff) dP = 0.9 * ramp(T.diff + 0.5, T.diff + 4, t);
-    if (t > T.swallow) { dP *= 1 - ramp(T.swallow, T.swallow + 0.8, t); open = t < T.swallow + 1.5; }
-    drawEar(el.e, t, dP, open, t);
+    // ko'tarilish: salon (tashqi) bosimi pasayadi, o'rta quloqda havo ortiqcha qoladi.
+    // yutinish: nay ochiladi, ortiqcha havo nay orqali tomoqqa chiqadi; tashqi zichlik o'zgarmaydi.
+    const Pout = 1 - 0.65 * ramp(T.diff + 0.5, T.diff + 4, t);
+    const eq = H.clamp01((t - T.swallow - 0.2) / 2.0), eqS = eq * eq * (3 - 2 * eq);
+    const PinB = Pout + (1 - Pout) * (1 - eqS);
+    const open = t > T.swallow && t < T.swallow + 2.6;
+    drawEar(el.e, t, Pout, PinB, open ? Math.max(0.25, (PinB - Pout) / 0.65 * 1.6) * Math.min(1, (T.swallow + 2.6 - t) / 0.4) : 0, open, t);
     sop(el.dChip, win(T.dChip, T.sol, t, 0.5, 0.3)); sop(el.sChip, ramp(T.swallow, T.swallow + 0.5, t));
-    const pk = H.clamp01((t - T.swallow - 0.6) / 0.8); el.e.pop.setAttribute('r', (10 + 90 * pk).toFixed(1)); sop(el.e.pop, t > T.swallow + 0.6 ? (1 - pk) * 0.8 : 0);
+    sop(el.fOut, win(T.swallow + 0.2, T.swallow + 2.6, t, 0.3, 0.3));
+    const pk = H.clamp01((t - T.swallow - 2.2) / 0.8); el.e.pop.setAttribute('r', (10 + 90 * pk).toFixed(1)); sop(el.e.pop, t > T.swallow + 2.2 ? (1 - pk) * 0.8 : 0);
     // qo'nish: kichik oyna
     op('cMini', win(T.land + 1.0, T.cta, t, 0.5, 0.4));
-    let dm = -0.85 * ramp(T.land + 1.0, T.land + 4.0, t); let op2 = false;
-    for (const s of [T.s1, T.s2, T.s3]) { if (t > s && t < s + 1.2) { op2 = true; } if (t > s) dm = -0.85 * ramp(s + 1.2, s + 4.5, t); }
-    drawEar(el.m, t, dm, op2, t);
+    // qo'nish: salon bosimi oshadi (tashqi zichlik to'liq), o'rta quloqda havo kam qoladi;
+    // har yutinishda havo tomoqdan nay orqali kiradi va ichki zichlik tashqinikiga tenglashadi.
+    const SW = [T.s1, T.s2, T.s3];
+    const lack = x => { let k = -1; SW.forEach((s, i) => { if (x > s) k = i; });
+      if (k < 0) return ramp(T.land + 1.0, T.land + 4.0, x);
+      const s = SW[k], e = H.clamp01((x - s) / 1.2);
+      return lack(s) * (1 - e * e * (3 - 2 * e)) + ramp(s + 1.2, s + 4.5, x); };
+    const lk = lack(t), op2 = SW.some(s => t > s && t < s + 1.4);
+    drawEar(el.m, t, 1, 1 - 0.65 * lk, op2 ? -Math.max(0.25, lk * 1.6) : 0, op2, t);
     const yt = [T.s1, T.s2, T.s3].some(s => t > s && t < s + 1.5);
     el.yut.querySelector('text').textContent = yt ? '↓ yutinish — parda tekislandi' : 'tashqi bosim oshmoqda';
     { const g = el.yut, tx = g.querySelector('text'), r = g.querySelector('rect'), bb = tx.getBBox(); r.setAttribute('x', bb.x - 14); r.setAttribute('width', bb.width + 28); r.setAttribute('y', bb.y - 8); r.setAttribute('height', bb.height + 16); }

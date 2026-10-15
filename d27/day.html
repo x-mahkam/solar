@@ -565,7 +565,7 @@ void main(){
   float tg = rd.y < 0.0 ? -ro.y/rd.y : 1e9;
   float m; float t0 = 0.02, t1 = min(90.0, tg);
   if(uKidOn < 0.5){ float za = (-1.7 - ro.z)/rd.z, zb = (1.3 - ro.z)/rd.z; t0 = max(t0, min(za, zb)); t1 = min(t1, max(za, zb));
-    if(rd.y > 0.0) t1 = min(t1, (11.6 - ro.y)/rd.y); }
+    if(rd.y > 0.0) t1 = min(t1, (12.2 - ro.y)/rd.y); }
   vec3 wn = vec3(0.0), nn; float tw = 1e9;
   for(int i=0;i<3;i++){ float th = wireHit(ro, rd, i==0 ? HA : (i==1 ? HB : HC), nn); if(th > 0.0 && th < tw){ tw = th; wn = nn; } }
   if(tw < t1) t1 = tw + 0.002;
@@ -609,7 +609,7 @@ const rotY = (v, a) => [Math.cos(a) * v[0] + Math.sin(a) * v[2], v[1], -Math.sin
 // kadrdagi asosiy qush (BP[2]) — yaqindan ko'rsatiladi
 const B2 = [1.25, wireY(1.25, HB) + WR, WZ], FS = 0.022;
 // laylak: ustun tepasida, kameraga qaragan; o'ng qanot uchi A simga tegadi
-const SY = 0.30, SO = [0.0, PTOP, -0.01];
+const SY = 0.45, SO = [0.0, PTOP, -0.01];
 const st2w = l => add(SO, [Math.cos(SY) * l[0] + Math.sin(SY) * l[2], l[1], -Math.sin(SY) * l[0] + Math.cos(SY) * l[2]]);
 const sdir = l => sub(st2w(l), SO);
 const SR = st2w([0.11, 0.73, -0.06]), SL = st2w([-0.11, 0.73, -0.06]);
@@ -630,8 +630,8 @@ const CAMS = {
   A2: { p: [0.68, 9.86, -3.15], t: [0.66, 9.84, -0.45], th: 0.25 },
   C: { p: [1.25 + 0.27, 9.565, -0.45 - 0.40], t: [1.25, 9.525, -0.45], th: 0.30 },
   C2: { p: [1.25 + 0.30, 9.56, -0.45 - 0.37], t: [1.25, 9.522, -0.45], th: 0.30 },
-  D: { p: [0.10, 10.30, -4.25], t: [0.10, 10.36, -0.3], th: 0.42 },
-  D2: { p: [0.18, 10.30, -4.00], t: [0.12, 10.36, -0.3], th: 0.42 },
+  D: { p: [-2.30, 11.45, -3.75], t: [0.20, 10.36, -0.20], th: 0.42 },
+  D2: { p: [-2.15, 11.40, -3.50], t: [0.21, 10.36, -0.20], th: 0.42 },
   E: { p: [1.55, 1.05, -31.0], t: [1.0, 5.13, -0.45], th: 0.36 },
   E2: { p: [1.62, 1.05, -30.4], t: [1.0, 5.13, -0.45], th: 0.36 },
 };
@@ -784,9 +784,9 @@ return {
     sop(el.dTag, win(T.dTag, T.kid, t, 0.5, 0.4));
     if (scene4) {
       const tp = proj(TIP);
-      // sim → qanot uchi → qanot → gavda → oyoq → ustun tepasi → ustun tanasi bo'ylab pastga (yerga)
-      const PX = 0.105, PZ = -0.06, GY = 9.17;   // ustunning yon sirti (izolyatorlar ustidan o'tmaydi)
-      const pts = [add(TIP, [0.55, 0, 0]), TIP, add(SR, mul(WRs, 0.25)), SR, add(SO, [0.0, 0.62, 0]), add(SO, [0.0, 0.30, 0]), SO, [PX, PTOP - 0.04, PZ], [PX, GY, PZ]].map(proj);
+      // sim → qanot uchi → qanot → gavda → oyoq → (oyoqlar ustun qopqog'ida) → ustun tanasi bo'ylab pastga (yerga)
+      const PX = -0.065, PZ = -0.10, GY = 9.17;   // ustunning kameraga qaragan sirti (izolyatorlar ustidan o'tmaydi)
+      const pts = [add(TIP, [0.55, 0, 0]), TIP, add(SR, mul(WRs, 0.25)), SR, st2w([0.035, 0.55, 0.02]), st2w([0.07, 0.29, 0.045]), st2w([0.07, 0.012, 0.0]), [PX, PTOP - 0.04, PZ], [PX, GY, PZ]].map(proj);
       pts[0][1] = proj([TIP[0] + 0.55, wireY(TIP[0] + 0.55, HA), WZ])[1];
       el.path.setAttribute('points', pts.map(P).join(' '));
       el.path.setAttribute('stroke-dashoffset', (-t * 60).toFixed(1));
@@ -796,8 +796,8 @@ return {
         bd += `M${(tp[0] + Math.cos(a) * r0).toFixed(1)},${(tp[1] + Math.sin(a) * r0).toFixed(1)} L${(tp[0] + Math.cos(am) * (r0 + r1) * 0.6).toFixed(1)},${(tp[1] + Math.sin(am) * (r0 + r1) * 0.6).toFixed(1)} L${(tp[0] + Math.cos(a) * (r0 + r1)).toFixed(1)},${(tp[1] + Math.sin(a) * (r0 + r1)).toFixed(1)} `; }
       el.bolt.setAttribute('d', bd);
       const gp = proj([PX, GY, PZ]); setTag(el.gnd, gp[0], gp[1] + 44);
-      const wa = proj([1.75, wireY(1.75, HA), WZ]); setTag(el.vA, Math.max(24, wa[0]), wa[1] - 34); setTag(el.vA2, Math.max(24, wa[0]), wa[1] - 78);
-      const pp = proj([0, 9.75, 0]); setTag(el.vP, pp[0] - 64, pp[1] + 10);
+      const wa = proj([1.75, wireY(1.75, HA), WZ]); setTag(el.vA, 30, wa[1] - 34); setTag(el.vA2, 30, wa[1] - 78);
+      const pp = proj([0, 9.62, 0]); setTag(el.vP, pp[0] - 70, pp[1] + 10);
       const pm = proj(add(SR, mul(WRs, 0.75))); setTag(el.pathT, pm[0] - 30, pm[1] - 60);
       const cr = proj([-0.95, wireY(-0.95, HB) + 0.36, WZ]); setTag(el.safe, Math.min(cr[0], 1080 - 200), cr[1] - 6);
     }

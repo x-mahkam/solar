@@ -60,7 +60,7 @@
     <div id="dim"></div><div id="topscrim"></div><div id="lowfade"></div><div id="ctabg"></div>
     <div id="brand">FIZIKA HAYOTDA</div>
     <div id="badge"><small>30 KUN · 30 SAVOL</small><b>KUN 21/30</b></div>
-    <svg id="ov" viewBox="0 0 1080 1040"><defs><clipPath id="leftOfCliff"><rect id="clipR" x="0" y="0" width="1080" height="1040"/></clipPath></defs></svg>
+    <svg id="ov" viewBox="0 0 1080 1040"><defs></defs></svg>
     <div class="card big" id="cSon"><svg class="full" id="sSon" viewBox="0 0 960 640"></svg></div>
     <div id="foot">* harakat sekinlashtirib ko‘rsatilgan</div>
 
@@ -155,7 +155,10 @@ vec2 map(vec3 p){
   float cl;
   if(p.x < -6.0) cl = -p.x - 4.5;
   else { vec2 g = p.yz*0.12; float n = 0.5*vnoise(g) + 0.25*vnoise(g*2.03 + 17.3) + 0.125*vnoise(g*4.1 + 9.1); cl = -p.x + (n - 0.44)*7.0 + 0.25*vnoise(p.yz*1.1); }
-  cl = max(cl, -(p.y + 2.0)); if(cl < r.x) r = vec2(cl*0.6, 2.0);
+  cl = max(cl, -(p.y + 2.0));
+  // qoya tizmasi z = -36 atrofida tugaydi (oldingi kadrda ko'rinmaydi): yon kadrda qoya chekkasi to'lqin tekisligiga to'g'ri keladi
+  cl = max(cl, -(p.z + 36.0) - 1.6*vnoise(p.xy*0.35));
+  if(cl < r.x) r = vec2(cl*0.6, 2.0);
   vec3 q = p - vec3(-uDist, 0.0, 0.0); q = vec3(q.z, q.y, -q.x);           // odam qoyaga qaragan (+x)
   if(length(p - vec3(-uDist, 1.0, 0.0)) < 3.0){ vec2 pr = person(q, 0.0); if(pr.x < r.x) r = vec2(pr.x, pr.y + 10.0); }
   return r;
@@ -218,7 +221,18 @@ function proj(q) { const v = q.map((x, i) => x - cam.p[i]), z = dot(v, cam.c.fwd
 return {
   init(H) {
     const ov = H.$('ov');
-    el.g = H.el('g', {}, ov); el.gR = H.el('g', { 'clip-path': 'url(#leftOfCliff)' }, ov);
+    // to'lqin yoylari faqat havoda: qoya ustiga (ekrandagi qoya chegarasi) va sarlavha zonasiga (y < 235) chizilmaydi.
+    // Chegaralar shu kunning statik kameralaridan o'lchangan (qoya materiali maskasi): F = old kadr (0-29 s), S = 170 m yon kadr.
+    const defs = ov.querySelector('defs');
+    const gr = H.el('linearGradient', { id: 'wvFade', gradientUnits: 'userSpaceOnUse', x1: 0, y1: 236, x2: 0, y2: 290 }, defs);
+    H.el('stop', { offset: 0, 'stop-color': '#fff', 'stop-opacity': 0 }, gr); H.el('stop', { offset: 1, 'stop-color': '#fff', 'stop-opacity': 1 }, gr);
+    const mk = H.el('mask', { id: 'wvMask', maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: 1080, height: 1040 }, defs);
+    // chegara: o'lchangan zinapoyaning chiziqli yumshatilgani (zaxira +3 px); vertikal qoya qirrasi (S, x = 848) keskin qoladi
+    const stepPath = st => { let d = 'M0 1040'; st.forEach((q, i) => { if (i && q[1] - st[i - 1][1] > 20) d += ` L${q[0]} ${st[i - 1][1]}`; d += ` L${q[0]} ${q[1] + (i + 1 < st.length && st[i + 1][1] - q[1] < 20 ? 2 : 0)}`; }); return d + ` L1080 ${st[st.length - 1][1] + 2} L1080 1040 Z`; };
+    el.airF = stepPath([[0,505],[72,507],[104,509],[160,511],[184,513],[200,515],[248,517],[312,519],[344,521],[368,523],[456,525],[496,527],[512,529],[536,531],[552,533],[560,535],[576,537],[600,539],[616,541],[640,543],[656,545],[680,547],[712,549],[728,551],[880,553],[944,555],[968,557],[992,559],[1008,561],[1032,563],[1056,565]]);
+    el.airS = stepPath([[0,235],[848,563],[856,565],[872,567],[888,569],[896,571],[912,573],[928,575],[944,577],[968,579],[984,581],[1008,583],[1016,585],[1032,587],[1040,589],[1064,591]]);
+    el.air = H.el('path', { d: el.airF, fill: 'url(#wvFade)' }, mk);
+    el.g = H.el('g', { mask: 'url(#wvMask)' }, ov);
     el.rings = []; for (let i = 0; i < 4; i++) el.rings.push(H.el('path', { fill: 'none', stroke: '#ffffff', 'stroke-width': 5, 'stroke-linecap': 'round', opacity: 0 }, el.g));
     el.echo = []; for (let i = 0; i < 4; i++) el.echo.push(H.el('path', { fill: 'none', stroke: '#ffc83d', 'stroke-width': 5, 'stroke-linecap': 'round', opacity: 0 }, el.g));
     el.say = H.tag(0, 0, '«Salom!»', '#fff', ov, 'middle', 28); el.hear = H.tag(0, 0, '«...lom!»', '#ffc83d', ov, 'middle', 28);
@@ -291,12 +305,19 @@ return {
     H.set('uInPos', ip); H.set('uInCam', H.look(ip, itg).m);
     const mouth = [-D + 0.25, 1.67, 0];
     const M = proj(mouth), Mi = proj([D - 0.25, 1.67, 0]), cliffP = proj([0, 1.67, 0]);
-    // to'lqin fronti: odam va qoya orqali o'tgan vertikal tekislikdagi aylana (faqat havoda: qoya oldida, yer ustida)
-    const XC = -1.2;
-    const wave = (c, R0, sgn) => { const R = Math.sqrt(Math.max(0, R0 * R0 - c[1] * c[1])); let d = '', pen = false; for (let k = 0; k <= 160; k++) { const a = k / 160 * 2 * Math.PI, x = c[0] + R * Math.cos(a), y = c[2] + R * Math.sin(a);
-        const vert = fs > 0.5, yy = vert ? c[1] + R0 * Math.sin(a) : 0.04, xx = vert ? c[0] + R0 * Math.cos(a) : x;   // uzoq (yon) kadrda: vertikal tekislik
-        const ok = xx < XC && yy > 0.02; let P = null; if (ok) { P = proj(vert ? [xx, yy, 0] : [x, 0.04, y]); if (P[2] < 0.4) P = null; }
+    // to'lqin fronti = sfera kesimi. Old kadr: yer sathidagi kesim. Yon kadr: odam va qoya tizmasi chekkasi (z = -34,5) orqali
+    // o'tgan vertikal tekislikdagi kesim, shunda yoy ekranda aynan qoya chekkasiga borib tegadi. Qoya devori: x = 0 (aks: x < 0 qismi).
+    const vert = fs > 0.5;
+    el.air.setAttribute('d', vert ? el.airS : el.airF);
+    const uL = Math.hypot(-mouth[0], 34.5), U = [-mouth[0] / uL, 0, -34.5 / uL], N = [-U[2], 0, U[0]];
+    const wave = (c, R0) => { let cc = c, R = R0, d = '', pen = false;
+      if (vert) { const dn = (c[0] - mouth[0]) * N[0] + (c[2] - mouth[2]) * N[2]; if (Math.abs(dn) >= R0) return ''; cc = [c[0] - dn * N[0], c[1], c[2] - dn * N[2]]; R = Math.sqrt(R0 * R0 - dn * dn); }
+      else R = Math.sqrt(Math.max(0, R0 * R0 - c[1] * c[1]));
+      for (let k = 0; k <= 160; k++) { const a = k / 160 * 2 * Math.PI, ca = Math.cos(a), sa = Math.sin(a);
+        const q = vert ? [cc[0] + R * ca * U[0], cc[1] + R * sa, cc[2] + R * ca * U[2]] : [c[0] + R * ca, 0.04, c[2] + R * sa];
+        let P = null; if (q[0] < 0 && q[1] > 0.02) { P = proj(q); if (P[2] < 0.4) P = null; }
         if (P) { d += (pen ? 'L' : 'M') + P[0].toFixed(1) + ' ' + P[1].toFixed(1); pen = true; } else pen = false; } return d; };
+    const reach = vert ? uL : D - 0.25;   // to'lqin qoyaga yetadigan radius
     // qichqiriqlar: (boshlanish vaqti, vizual tezlik m/s)
     const shouts = [[0.4, 10], [T.shout1, 10], [T.shout2, 10], [T.shout3, 70]];
     let cur = null; for (const s of shouts) if (t >= s[0]) cur = s;
@@ -304,9 +325,11 @@ return {
     const ppm = pxPerM([-D * 0.5, 1.67, 0]);
     if (cur && t < T.son) {
       const dt = t - cur[0], v = cur[1];
-      el.rings.forEach((r, i) => { const R = v * (dt - i * 0.12); const on = R > 0.05 && R < D * 1.02; r.setAttribute('d', on ? wave(mouth, R, 1) : '');
-        sop(r, on ? 0.85 * (1 - i * 0.2) : 0); });
-      el.echo.forEach((r, i) => { const R = v * (dt - i * 0.12); const on = R > D - XC && R < 2.05 * D; r.setAttribute('d', on ? wave([D - 0.25, 1.67, 0], R, -1) : '');
+      const Ds = cur === shouts[3] ? D : 17;   // T.far dan oldingi qichqiriqlar 17 m qoya uchun tugagan: qoya uzoqlashganda qayta yonmasin
+      // chiquvchi yoy qoyaga yetib, u yerda tugaydi (x < 0 qismi qoladi, so'ng so'nadi); qaytgan yoy qoya yuzidan boshlanadi
+      el.rings.forEach((r, i) => { const R = v * (dt - i * 0.12); const fo = 1 - ramp(reach * 1.03, reach * 1.25, R); const on = R > 0.05 && fo > 0 && R < 2.05 * Ds; r.setAttribute('d', on ? wave(mouth, R) : '');
+        sop(r, on ? 0.85 * (1 - i * 0.2) * fo : 0); });
+      el.echo.forEach((r, i) => { const R = v * (dt - i * 0.12); const on = R > D - 0.25 && R < 2.05 * Ds; r.setAttribute('d', on ? wave([D - 0.25, 1.67, 0], R) : '');
         sop(r, on ? 0.9 * (1 - i * 0.2) : 0); });
       // taymer faqat o'lchanayotgan qichqiriq uchun ishlaydi; undan oldin 0,00 da turadi
       const idle = cur === shouts[1] || (cur === shouts[2] && t >= T.far);
