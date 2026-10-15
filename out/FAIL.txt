@@ -1,0 +1,28 @@
+== run.log (tail)
+FAIL p07 list.txt
+file s1.mp4
+file s2.mp4
+file s3.mp4
+== p07/l0.txt
+s0.mp4 1500
+s0.mp4 1560
+DONE s0.mp4
+== p07/l1.txt
+s1.mp4 1620
+s1.mp4 1680
+s1.mp4 1740
+DONE s1.mp4
+== p07/l2.txt
+s2.mp4 1800
+s2.mp4 1860
+DONE s2.mp4
+== p07/l3.txt
+s3.mp4 1920
+s3.mp4 1980
+DONE s3.mp4
+== p07/list.txt
+file s0.mp4
+file s1.mp4
+file s2.mp4
+file s3.mp4
+== note: all 4 segments (s0-s3) logged DONE; FAIL is because runr.sh's 'l*.txt' glob also matches list.txt, which has no DONE line.
