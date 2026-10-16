@@ -360,10 +360,10 @@ return {
     H.el('rect', { x: 694, y: 196, width: 16, height: 4, fill: '#333' }, pg);
     H.el('circle', { cx: 700, cy: 66, r: 26, fill: '#f0c39a' }, pg);
     H.el('path', { d: 'M676 58 Q700 30 724 54 L722 46 Q700 26 678 48 Z', fill: '#3a2a20' }, pg);
-    const EY = [690, 74], COIN = [360, PB - 6];   // qiya qarash: havoda ~42°, suvda ~30° -> sinish ko'rinadi
+    const EY = [690, 74], COIN = [489, PB - 6];   // suvda ~20°, havoda ~27° -> sinish ko'rinadi
     const S2 = snellPoint(COIN, EY, PY, 1.333);
     const sw2 = (S2[0] - COIN[0]) / Math.hypot(S2[0] - COIN[0], COIN[1] - PY), aa2 = Math.asin(1.333 * sw2);
-    const appD = (COIN[1] - PY) / 1.333, APP2 = [S2[0] - Math.tan(aa2) * appD, PY + appD];
+    const appD = (S2[0] - COIN[0]) / Math.tan(aa2), APP2 = [COIN[0], PY + appD];   // tasvir tanga ustida: havo nuri davomi vertikalni kesgan joy
     H.el('ellipse', { cx: COIN[0], cy: COIN[1], rx: 22, ry: 7, fill: '#ffc83d' }, p);
     el.pool = { p, PY, PB, APP2 };
     el.pool.norm = H.el('line', { x1: S2[0], y1: PY - 95, x2: S2[0], y2: PY + 150, stroke: '#fff', 'stroke-width': 2.5, 'stroke-dasharray': '8 8', opacity: 0 }, p);
@@ -371,6 +371,7 @@ return {
     { const lw = Math.hypot(S2[0] - COIN[0], COIN[1] - PY), la = Math.hypot(EY[0] - S2[0], PY - EY[1]); el.pool.fS = lw / (lw + la); }
     el.pool.dot = H.el('circle', { cx: S2[0], cy: S2[1], r: 9, fill: '#fff', stroke: '#16233f', 'stroke-width': 2, opacity: 0 }, p);
     el.pool.ext = H.line([S2, APP2], '#ffc83d', 4, p, { 'stroke-dasharray': '12 10' }); el.pool.ext.removeAttribute('pathLength');
+    el.pool.vert = H.el('line', { x1: COIN[0], y1: COIN[1] - 8, x2: COIN[0], y2: APP2[1] + 8, stroke: '#ffc83d', 'stroke-width': 2.5, 'stroke-dasharray': '3 7', 'stroke-linecap': 'round', opacity: 0 }, p);
     el.pool.gcoin = H.el('ellipse', { cx: APP2[0], cy: APP2[1], rx: 22, ry: 7, fill: '#ffc83d', opacity: 0 }, p);
     el.pool.ghostBottom = H.el('line', { x1: 70, y1: APP2[1], x2: 640, y2: APP2[1], stroke: '#ffc83d', 'stroke-width': 3, 'stroke-dasharray': '10 10', opacity: 0 }, p);
     const bar = (x, y1, y2, c) => { const g = H.el('g', { opacity: 0 }, p);
@@ -434,7 +435,7 @@ return {
     const k2 = ramp(57.3, 58.6, t); sop(pl.ext, k2 > 0 ? 1 : 0);
     const S2 = pl.ray.getAttribute('points').split(' ')[1].split(',').map(Number);
     pl.ext.setAttribute('points', `${S2[0]},${S2[1]} ${(S2[0] + (pl.APP2[0] - S2[0]) * k2).toFixed(1)},${(S2[1] + (pl.APP2[1] - S2[1]) * k2).toFixed(1)}`);
-    sop(pl.gcoin, 0.8 * ramp(58.4, 58.8, t)); sop(pl.ghostBottom, ramp(58.8, 59.3, t));
+    sop(pl.gcoin, 0.8 * ramp(58.4, 58.8, t)); sop(pl.vert, 0.8 * ramp(58.4, 58.8, t)); sop(pl.ghostBottom, ramp(58.8, 59.3, t));
     sop(pl.bApp, ramp(59.1, 59.6, t)); sop(pl.lApp, ramp(59.1, 59.6, t)); sop(pl.formula, ramp(60.3, 60.8, t));
     sop(pl.chip, ramp(62.4, 62.9, t));
 
