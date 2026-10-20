@@ -60,6 +60,7 @@
   .big b.rd { color: #ff7a4a; }
   #big0 span { font-size: 70px; border-color: rgba(255,200,61,.6); }
   #cta, #ctabg { display: none !important; }
+  #cSpec { top: 244px; height: 510px; }
 </style></head><body>
 <div id="fit"><div id="box">
   <canvas id="gl"></canvas>
@@ -603,28 +604,55 @@ return {
     el.clockT = el.clock.querySelector('text');
     el.lapse = H.tag(1020, 352, '▶▶ taymlaps', '#c9d5ea', ov, 'end', 24);
 
-    // --- 2: prizma (d1 dan)
+    // --- 2: prizma — Snell qonuni bo'yicha (dispersiya kattalashtirilgan)
     { const s = H.$('sPrism');
       const dg = H.el('defs', {}, s);
-      const cp = H.el('clipPath', { id: 'specClip' }, dg); el.specRect = H.el('rect', { x: 560, y: 0, width: 0, height: 520 }, cp);
+      const cp = H.el('clipPath', { id: 'specClip' }, dg); el.specRect = H.el('rect', { x: 380, y: 0, width: 0, height: 520 }, cp);
       const fl = H.el('filter', { id: 'glow', x: '-50%', y: '-50%', width: '200%', height: '200%' }, dg); H.el('feGaussianBlur', { stdDeviation: 6 }, fl);
-      el.beam = H.el('line', { x1: 40, y1: 410, x2: 392, y2: 242, stroke: '#fff', 'stroke-width': 10, 'stroke-linecap': 'round', pathLength: 1, 'stroke-dasharray': '1 1', 'stroke-dashoffset': 1 }, s);
-      el.beamIn = H.el('line', { x1: 392, y1: 242, x2: 560, y2: 242, stroke: '#fff', 'stroke-opacity': .55, 'stroke-width': 7, opacity: 0 }, s);
+      const A = [476, 80], L = [316, 360], R = [636, 360];
+      const nz = v => { const l = Math.hypot(v[0], v[1]); return [v[0] / l, v[1] / l]; };
+      const refr = (d, n, eta) => { const ci = -(d[0] * n[0] + d[1] * n[1]), k = 1 - eta * eta * (1 - ci * ci); const f = eta * ci - Math.sqrt(k); return nz([eta * d[0] + f * n[0], eta * d[1] + f * n[1]]); };
+      const hitSeg = (p, d, a, b) => { const e = [b[0] - a[0], b[1] - a[1]], den = d[0] * e[1] - d[1] * e[0];
+        const tt = ((a[0] - p[0]) * e[1] - (a[1] - p[1]) * e[0]) / den; return [p[0] + d[0] * tt, p[1] + d[1] * tt]; };
+      const P0 = [40, 400], HIT = [L[0] + 0.4 * (A[0] - L[0]), L[1] + 0.4 * (A[1] - L[1])];
+      const d0 = nz([HIT[0] - P0[0], HIT[1] - P0[1]]);
+      const fL = nz([A[0] - L[0], A[1] - L[1]]), nL = [fL[1], -fL[0]];             // chap yoq tashqi normali (chap-yuqoriga)
+      const fR = nz([R[0] - A[0], R[1] - A[1]]), nRo = [-fR[1], fR[0]];          // o'ng yoq tashqi normali (o'ng-yuqoriga)
+      const nLo = (nL[0] * d0[0] + nL[1] * d0[1] < 0) ? nL : [-nL[0], -nL[1]];
+      const nRout = (nRo[0] > 0) ? nRo : [-nRo[0], -nRo[1]];
+      const NB = 8, nRed = 1.45, nVio = 1.70;                                     // haqiqiy: 1.51…1.53 (kattalashtirilgan)
+      const bnd = [];
+      for (let i = 0; i < NB; i++) { const n = nRed + (nVio - nRed) * i / (NB - 1);
+        const din = refr(d0, nLo, 1 / n);
+        const Q = hitSeg(HIT, din, A, R);
+        const dout = refr(din, [-nRout[0], -nRout[1]], n);
+        const tt = Math.min((915 - Q[0]) / Math.max(dout[0], 1e-3), dout[1] > 0 ? (500 - Q[1]) / dout[1] : 1e9);
+        bnd.push({ Q, F: [Q[0] + dout[0] * tt, Q[1] + dout[1] * tt] }); }
+      el.prismB = bnd;
+      el.beam = H.el('line', { x1: P0[0], y1: P0[1], x2: HIT[0], y2: HIT[1], stroke: '#fff', 'stroke-width': 9, 'stroke-linecap': 'butt', pathLength: 1, 'stroke-dasharray': '1 1', 'stroke-dashoffset': 1 }, s);
       const sp = H.el('g', { 'clip-path': 'url(#specClip)' }, s);
       const SPEC = ['#ff3b30', '#ff8a1f', '#ffd21f', '#3fcf4f', '#2f8bff', '#3b4cff', '#8b3fe0'];
-      SPEC.forEach((c, i) => { const y0 = 248 + i * 3.2, ya = 262 + i * 30, yb = ya + 22;
-        H.el('polygon', { points: `560,${y0} 905,${ya} 905,${yb} 560,${y0 + 3.2}`, fill: c, opacity: .95 }, sp); });
-      el.blueGlow = H.el('polygon', { points: '560,261 905,382 905,432 560,268', fill: '#4a8dff', filter: 'url(#glow)', opacity: 0 }, s);
-      H.el('polygon', { points: '476,80 316,360 636,360', fill: 'rgba(170,200,255,.16)', stroke: '#dce8ff', 'stroke-width': 3.5, 'stroke-linejoin': 'round' }, s);
+      const f1 = v => v.map(x => x.toFixed(1)).join(',');
+      SPEC.forEach((c, i) => { const a = bnd[i], b = bnd[i + 1];
+        H.el('polygon', { points: `${f1(HIT)} ${f1(a.Q)} ${f1(b.Q)}`, fill: c, opacity: .5 }, sp);                   // shisha ichida: tor yelpig'ich
+        H.el('polygon', { points: `${f1(a.Q)} ${f1(a.F)} ${f1(b.F)} ${f1(b.Q)}`, fill: c, opacity: .95 }, sp); });  // tashqarida: kengayadi
+      const bl = [bnd[4], bnd[5]];
+      el.blueGlow = H.el('polygon', { points: `${f1(bl[0].Q)} ${f1(bl[0].F)} ${f1(bl[1].F)} ${f1(bl[1].Q)}`, fill: '#4a8dff', filter: 'url(#glow)', opacity: 0 }, s);
+      H.el('polygon', { points: `${f1(A)} ${f1(L)} ${f1(R)}`, fill: 'rgba(170,200,255,.13)', stroke: '#dce8ff', 'stroke-width': 3.5, 'stroke-linejoin': 'round' }, s);
+      // normallar (shtrix) — sinish nuqtalarida
+      H.el('line', { x1: HIT[0] - nLo[0] * 55, y1: HIT[1] - nLo[1] * 55, x2: HIT[0] + nLo[0] * 55, y2: HIT[1] + nLo[1] * 55, stroke: '#9fb0cc', 'stroke-width': 2, 'stroke-dasharray': '6 6', opacity: .7 }, s);
+      const QM = bnd[4].Q;
+      H.el('line', { x1: QM[0] - nRout[0] * 50, y1: QM[1] - nRout[1] * 50, x2: QM[0] + nRout[0] * 50, y2: QM[1] + nRout[1] * 50, stroke: '#9fb0cc', 'stroke-width': 2, 'stroke-dasharray': '6 6', opacity: .7 }, s);
       text(H, s, 60, 470, 'oq nur', { fill: '#fff', 'font-size': 30 });
-      text(H, s, 912, 252, 'qizil', { 'text-anchor': 'end', fill: '#ff8d7a', 'font-size': 27 });
-      text(H, s, 900, 492, 'binafsha', { 'text-anchor': 'end', fill: '#b98cff', 'font-size': 27 });
-      el.blueLab = text(H, s, 700, 470, 'ko‘k — eng ko‘p sochiladi', { 'text-anchor': 'end', fill: '#8fd0ff', 'font-size': 27, opacity: 0 });
+      const Fr = bnd[0].F, Fv = bnd[NB - 1].F, Fb = [(bl[0].F[0] + bl[1].F[0]) / 2, (bl[0].F[1] + bl[1].F[1]) / 2];
+      text(H, sp, Math.min(Fr[0] + 2, 940), Fr[1] - 14, 'qizil', { 'text-anchor': 'end', fill: '#ff8d7a', 'font-size': 27 });
+      text(H, sp, Fv[0] - 12, Math.min(Fv[1] + 4, 512), 'binafsha', { 'text-anchor': 'end', fill: '#b98cff', 'font-size': 27 });
+      el.blueLab = text(H, s, 40, 92, 'ko‘k — eng ko‘p sochiladi', { fill: '#8fd0ff', 'font-size': 27, opacity: 0 });
       el.pScat = H.el('g', { opacity: 0 }, s);
-      [[-60, -40], [-30, -70], [10, -80], [60, -50], [-50, 50], [40, 70]].forEach(([dx, dy]) => arrow(H, el.pScat, 850, 405, 850 + dx, 405 + dy, '#6fc3ff', 4));
+      [[-50, -55], [-10, -75], [40, -60], [-60, 10]].forEach(([dx, dy]) => arrow(H, el.pScat, Fb[0] - 40, Fb[1] - 12, Fb[0] - 40 + dx, Fb[1] - 12 + dy, '#6fc3ff', 4));
+      el.prismHit = HIT;
       text(H, s, 40, 46, '* ranglar ajralishi kattalashtirib ko‘rsatilgan', { fill: '#9fb0cc', 'font-size': 22, 'font-weight': 400 });
     }
-
     // --- 3: sochilish sxemasi
     { const s = H.$('sScat'), dg = H.el('defs', {}, s);
       const rg = H.el('radialGradient', { id: 'sunG' }, dg);
@@ -676,33 +704,59 @@ return {
       el.eyeGlow = H.el('circle', { cx: EYE[0], cy: EYE[1], r: 16, fill: '#6fc3ff', opacity: 0 }, el.p4);
     }
 
-    // --- 5: spektr
+    // --- 5: spektr (hamma egri chiziq chizma ichida, max = 90%)
     { const s = H.$('sSpec'), dg = H.el('defs', {}, s);
-      const X = l => 90 + (l - 380) / 340 * 810, Y = v => 380 - 290 * v;
+      const PX0 = 70, PX1 = 690, PY0 = 50, PY1 = 350, PH = PY1 - PY0;
+      const X = l => PX0 + (l - 380) / 340 * (PX1 - PX0), Y = v => PY1 - PH * v;
       const lg = H.el('linearGradient', { id: 'specG', x1: X(380), x2: X(720), y1: 0, y2: 0, gradientUnits: 'userSpaceOnUse' }, dg);
       SPECSTOPS.forEach(([l, c]) => H.el('stop', { offset: ((l - 380) / 340).toFixed(3), 'stop-color': c }, lg));
-      el.blueBand = H.el('rect', { x: X(440), y: 70, width: X(490) - X(440), height: 360, rx: 10, fill: '#2f7bff', opacity: 0 }, s);
-      el.violBand = H.el('rect', { x: X(380), y: 70, width: X(425) - X(380), height: 360, rx: 10, fill: '#8b3fe0', opacity: 0 }, s);
-      H.el('line', { x1: 90, y1: 380, x2: 900, y2: 380, stroke: 'rgba(255,255,255,.3)', 'stroke-width': 2 }, s);
-      H.el('rect', { x: 90, y: 392, width: 810, height: 40, rx: 6, fill: 'url(#specG)' }, s);
-      [[400, 'binafsha'], [462, 'ko‘k'], [530, 'yashil'], [585, 'sariq'], [680, 'qizil']].forEach(([l, n]) => text(H, s, X(l), 466, n, { 'text-anchor': 'middle', 'font-size': 24, fill: '#d6e0f0' }));
-      [400, 500, 600, 700].forEach(l => text(H, s, X(l), 500, l + ' nm', { 'text-anchor': 'middle', 'font-size': 19, 'font-weight': 400, fill: '#8fa0bd' }));
-      const curve = (fn, col, w, dash) => { const pts = []; for (let l = 380; l <= 720; l += 5) pts.push([X(l), Y(fn(l))]); return H.line(pts, col, w, s, dash ? {} : {}); };
-      const sunT = [[380, .50], [400, .70], [420, .82], [440, .95], [460, 1.0], [500, .98], [550, .95], [600, .91], [650, .86], [720, .78]];
-      const sunF = l => { for (let i = 1; i < sunT.length; i++) if (l <= sunT[i][0]) { const [a, va] = sunT[i - 1], [b, vb] = sunT[i]; return va + (vb - va) * (l - a) / (b - a); } return .78; };
-      el.cScat = curve(l => Math.pow(380 / l, 4), '#ffffff', 5);
-      el.cSun = curve(l => 0.9 * sunF(l), '#ffc83d', 5);
-      el.cEye = curve(l => 0.95 * Math.exp(-Math.pow(l - 555, 2) / (2 * 62 * 62)), '#7dffa0', 5);
-      el.lScat = text(H, s, X(392), 66, 'Havoda sochilish ∝ 1/λ⁴', { fill: '#fff', 'font-size': 26, opacity: 0 });
-      el.lSun = text(H, s, 900, 92, 'Quyosh nuri', { 'text-anchor': 'end', fill: '#ffc83d', 'font-size': 26, opacity: 0 });
-      el.lEye = text(H, s, X(640), 215, 'Ko‘z sezgirligi*', { 'text-anchor': 'start', fill: '#7dffa0', 'font-size': 26, opacity: 0 });
-      el.lViol = text(H, s, X(403), 248, 'kam ↓', { 'text-anchor': 'middle', fill: '#d9b8ff', 'font-size': 24, opacity: 0 });
+      const cpp = H.el('clipPath', { id: 'plotClip' }, dg); H.el('rect', { x: PX0, y: PY0 - 6, width: PX1 - PX0, height: PH + 8 }, cpp);
+      H.el('rect', { x: PX0, y: PY0, width: PX1 - PX0, height: PH, fill: '#0e1d3a', opacity: .6 }, s);
+      H.el('line', { x1: PX0, y1: PY1, x2: PX1, y2: PY1, stroke: 'rgba(255,255,255,.35)', 'stroke-width': 2 }, s);
+      H.el('rect', { x: PX0, y: PY1 + 8, width: PX1 - PX0, height: 30, rx: 6, fill: 'url(#specG)' }, s);
+      [[400, 'binafsha'], [462, 'ko‘k'], [530, 'yashil'], [588, 'sariq'], [670, 'qizil']].forEach(([l, n]) => text(H, s, X(l), PY1 + 66, n, { 'text-anchor': 'middle', 'font-size': 22, fill: '#d6e0f0' }));
+      [400, 500, 600, 700].forEach(l => text(H, s, X(l), PY1 + 92, l + ' nm', { 'text-anchor': 'middle', 'font-size': 18, 'font-weight': 400, fill: '#8fa0bd' }));
+      const sunT = [[380, .55], [400, .68], [420, .80], [440, .93], [460, 1.0], [500, .99], [550, .96], [600, .92], [650, .87], [720, .80]];
+      const sunF = l => { for (let i = 1; i < sunT.length; i++) if (l <= sunT[i][0]) { const [a, va] = sunT[i - 1], [b, vb] = sunT[i]; return va + (vb - va) * (l - a) / (b - a); } return .8; };
+      const scatF = l => Math.pow(380 / l, 4);
+      const eyeF = l => Math.exp(-Math.pow(l - 530, 2) / (2 * 62 * 62));            // sxematik
+      const prodF = l => scatF(l) * sunF(l) * eyeF(l);
+      let pmax = 0, lpk = 380; for (let l = 380; l <= 720; l++) { const v = prodF(l); if (v > pmax) { pmax = v; lpk = l; } }
+      el.lpk = lpk;
+      const pg = H.el('g', { 'clip-path': 'url(#plotClip)' }, s);
+      const pts = (fn, k) => { const a = []; for (let l = 380; l <= 720; l += 4) a.push([X(l), Y(k * fn(l))]); return a; };
+      const KS = 0.9, KSun = 0.6, KE = 0.75, KP = 0.9;
+      const pp = pts(l => prodF(l) / pmax, KP);
+      el.pFill = H.el('polygon', { points: [[PX0, PY1], ...pp, [PX1, PY1]].map(p => p.map(v => v.toFixed(1)).join(',')).join(' '), fill: '#8fd0ff', opacity: 0 }, pg);
+      el.cScat = H.line(pts(scatF, KS), '#ffffff', 4, pg);
+      el.cSun = H.line(pts(l => sunF(l), KSun), '#ffc83d', 4, pg);
+      el.cEye = H.line(pts(eyeF, KE), '#7dffa0', 4, pg);
+      el.cProd = H.line(pp, '#9fd8ff', 9, pg);
+      // "kam" — binafsha joyida quyosh egri chizig'i ostida, strelka bilan
+      el.lViol = H.el('g', { opacity: 0 }, s);
+      { const xv = X(387), yv = Y(KSun * sunF(387));
+        text(H, el.lViol, PX0 + 6, yv - 34, 'kam', { fill: '#d9b8ff', 'font-size': 24 });
+        arrow(H, el.lViol, PX0 + 24, yv - 28, PX0 + 24, yv - 6, '#d9b8ff', 3); }
+      // osmon: KO'K — mahsulot cho'qqisi ustida
       el.lBlue = H.el('g', { opacity: 0 }, s);
-      H.el('rect', { x: X(465) - 105, y: 334, width: 210, height: 44, rx: 12, fill: '#081022', stroke: '#6fc3ff', 'stroke-width': 2 }, el.lBlue);
-      text(H, el.lBlue, X(465), 365, 'osmon: KO‘K', { 'text-anchor': 'middle', fill: '#8fd0ff', 'font-size': 26 });
-      text(H, s, 900, 30, '* sxematik', { 'text-anchor': 'end', fill: '#8fa0bd', 'font-size': 20, 'font-weight': 400 });
+      { const xb = X(lpk), yb = Y(KP);
+        H.el('circle', { cx: xb, cy: yb, r: 7, fill: '#e6f4ff' }, el.lBlue);
+        H.el('rect', { x: xb - 92, y: yb - 62, width: 184, height: 40, rx: 10, fill: '#081022', stroke: '#6fc3ff', 'stroke-width': 2 }, el.lBlue);
+        text(H, el.lBlue, xb, yb - 34, 'osmon: KO‘K', { 'text-anchor': 'middle', fill: '#8fd0ff', 'font-size': 23 }); }
+      el.lBlueY = Y(KP);
+      // legenda (o'ng tomonda, karta ichida)
+      const LX = 710, lg2 = H.el('g', {}, s);
+      H.el('rect', { x: LX, y: PY0, width: 236, height: 300, rx: 14, fill: '#081022', stroke: 'rgba(255,255,255,.16)', 'stroke-width': 1.5 }, lg2);
+      const ent = (y, col, w, lines) => { const g = H.el('g', { opacity: 0 }, lg2);
+        H.el('line', { x1: LX + 14, y1: y - 8, x2: LX + 44, y2: y - 8, stroke: col, 'stroke-width': w, 'stroke-linecap': 'round' }, g);
+        lines.forEach((tx, i) => text(H, g, LX + 54, y + i * 26, tx, { fill: i ? '#c9d5ea' : col, 'font-size': i ? 18 : 21, 'font-weight': i ? 400 : 700 }));
+        return g; };
+      el.lScat = ent(PY0 + 40, '#ffffff', 4, ['Sochilish', '∝ 1/λ⁴']);
+      el.lSun = ent(PY0 + 106, '#ffc83d', 4, ['Quyosh nuri']);
+      el.lEye = ent(PY0 + 150, '#7dffa0', 4, ['Ko‘z', 'sezgirligi*']);
+      el.lProd = ent(PY0 + 214, '#9fd8ff', 8, ['Osmon rangi', '= sochilish ×', 'Quyosh × ko‘z']);
+      text(H, s, 946, PY1 + 92, '* sxematik', { 'text-anchor': 'end', fill: '#8fa0bd', 'font-size': 18, 'font-weight': 400 });
     }
-
     // --- 6: nur yo'li (Yer egriligi + atmosfera qobig'i)
     { const s = H.$('sPath'), dg = H.el('defs', {}, s);
       const cx = 400, cy = 1310, R = 1000, RAt = 1100, oy = cy - R;     // kuzatuvchi (400, 310)
@@ -800,8 +854,8 @@ return {
     // 2: prizma
     H.op('cPrism', sec(1));
     H.draw(el.beam, ramp(6.35, 7.0, t));
-    H.sop(el.beamIn, ramp(6.95, 7.15, t));
-    el.specRect.setAttribute('width', (400 * ramp(7.15, 8.2, t)).toFixed(1));
+    el.specRect.setAttribute('x', (el.prismHit[0] - 2).toFixed(1));
+    el.specRect.setAttribute('width', (560 * ramp(7.0, 8.2, t)).toFixed(1));
     { const g = ramp(9.0, 9.6, t); H.sop(el.blueGlow, g * (0.55 + 0.2 * Math.sin(t * 5))); H.sop(el.blueLab, g); H.sop(el.pScat, ramp(9.6, 10.1, t) * (0.6 + 0.4 * Math.sin(t * 6))); }
 
     // 3: sochilish
@@ -851,11 +905,10 @@ return {
 
     // 5: spektr
     H.op('cSpec', sec(4));
-    H.draw(el.cScat, ramp(30.8, 31.9, t)); H.sop(el.lScat, ramp(31.2, 31.7, t));
-    H.sop(el.violBand, 0.35 * ramp(31.8, 32.3, t) * (1 - 0.4 * ramp(36.8, 37.3, t)));
-    H.draw(el.cSun, ramp(33.2, 34.3, t)); H.sop(el.lSun, ramp(33.6, 34.1, t)); H.sop(el.lViol, ramp(34.3, 34.8, t));
-    H.draw(el.cEye, ramp(35.4, 36.5, t)); H.sop(el.lEye, ramp(35.8, 36.3, t));
-    H.sop(el.blueBand, 0.45 * ramp(36.9, 37.4, t)); H.sop(el.lBlue, ramp(37.1, 37.6, t));
+    H.draw(el.cScat, ramp(30.8, 31.9, t)); H.sop(el.lScat, ramp(31.0, 31.5, t));
+    H.draw(el.cSun, ramp(33.2, 34.3, t)); H.sop(el.lSun, ramp(33.4, 33.9, t)); H.sop(el.lViol, ramp(34.2, 34.7, t));
+    H.draw(el.cEye, ramp(35.4, 36.5, t)); H.sop(el.lEye, ramp(35.6, 36.1, t));
+    { const k = ramp(36.7, 37.5, t); H.draw(el.cProd, k); H.sop(el.pFill, 0.22 * k); H.sop(el.lProd, ramp(36.8, 37.3, t)); H.sop(el.lBlue, ramp(37.4, 37.9, t)); }
 
     // 6: nur yo'li
     H.op('cPath', win(B[5], 47.6, t, 0.3, 0.5));
