@@ -67,6 +67,7 @@
   .cap p:empty { display: none; }
   #cap3 h1, #cap4 h1 { font-size: 46px; }
   #cap5 h1, #cap6 h1 { font-size: 50px; }
+  .cap { display: none !important; }
 </style></head><body>
 <div id="fit"><div id="box">
   <canvas id="gl"></canvas>
@@ -90,11 +91,11 @@
 
 <div class="cap hook" id="cap0"><h1></h1><p id="hookSub"></p></div>
 <div class="cap" id="cap1"><h1></h1><p></p></div>
-<div class="cap" id="cap2"><h1>Suvdan havoga — nur sinadi</h1><p></p></div>
-<div class="cap" id="cap3"><h1>Suvdagi qism yuqoriroq ko‘rinadi</h1><p></p></div>
-<div class="cap" id="cap4"><h1>Hovuz aslidan sayozroq ko‘rinadi</h1><p></p></div>
-<div class="cap" id="cap5"><h1>Pastroqqa yoki yuqoriroqqa?</h1><p></p></div>
-<div class="cap" id="cap6"><h1>Pastroqqa yoki yuqoriroqqa?</h1><p></p></div>
+<div class="cap" id="cap2"><h1></h1><p></p></div>
+<div class="cap" id="cap3"><h1></h1><p></p></div>
+<div class="cap" id="cap4"><h1></h1><p></p></div>
+<div class="cap" id="cap5"><h1></h1><p></p></div>
+<div class="cap" id="cap6"><h1></h1><p></p></div>
 
     <div id="cta">
       <div class="k">ERTAGA</div>
@@ -116,11 +117,11 @@ uniform mat3  uCam;
 
 // To'g'ri burchakli shisha idish (akvarium), suv va qalam: nur har bir chegarada Snell qonuni bo'yicha sinadi.
 // birlik: metr; idish markazi koordinata boshida, stol y = 0
-const float WX = 0.065, WZ = 0.042, HG = 0.130, HW = 0.095, YB = 0.008, NW = 1.333;
+const float WX = 0.065, WZ = 0.042, HG = 0.120, HW = 0.100, YB = 0.008, NW = 1.333;
 const vec3  LDIR = normalize(vec3(-0.45, 0.80, 0.40));
-const vec3  PA0 = vec3(0.040, 0.0085, 0.004);
-const vec3  PB0 = vec3(-0.0665, 0.1338, -0.022);
-const float PR = 0.0036, PL = 0.177, PTIP = 0.020;
+const vec3  PA0 = vec3(-0.010, 0.0085, -0.026);
+const vec3  PB0 = vec3(-0.0665, 0.1236, 0.002);
+const float PR = 0.0036, PL = 0.163, PTIP = 0.020;
 
 float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -192,7 +193,7 @@ vec3 table(vec3 p){
   vec2 dd = abs(q) - vec2(WX, WZ);
   float sd = length(max(dd,0.0)) + min(max(dd.x,dd.y),0.0);
   float sh = 1.0 - 0.45*smoothstep(0.02, -0.01, sd);
-  float caus = smoothstep(0.012, -0.02, sd)*0.25*(0.6+0.4*sin(p.x*260.0+sin(p.z*210.0)*2.0));
+  float caus = smoothstep(0.012, -0.02, sd)*0.18;
   return alb*(0.25 + 0.75*sh) + vec3(1.0,0.9,0.7)*caus*0.25;
 }
 float fresnel(float c, float n1, float n2){ float r0 = (n1-n2)/(n1+n2); r0*=r0; return r0 + (1.0-r0)*pow(1.0-c, 5.0); }
@@ -235,9 +236,18 @@ float edgeK(vec3 p){                                    // shisha qirralari (yas
   float v = smoothstep(0.0016, 0.0004, max(ex, ez));
   return max(v, smoothstep(0.0016, 0.0004, ey));
 }
+vec3 wallCol(vec3 p, vec3 n, vec3 rd, bool inner){   // shaffof emas plastik idish (yon devorlar)
+  vec3 alb = inner ? vec3(0.62,0.68,0.72) : vec3(0.20,0.34,0.50);
+  float dif = inner ? 0.55 + 0.35*clamp(p.y/HG,0.0,1.0) : max(dot(n, LDIR), 0.0);
+  float sp = inner ? 0.0 : pow(max(dot(reflect(rd, n), LDIR), 0.0), 30.0)*0.25;
+  float rim = smoothstep(0.003, 0.0, HG - p.y);
+  vec3 c = alb*(0.22 + 0.85*dif) + vec3(1.0)*sp + vec3(0.15)*rim;
+  float lip = smoothstep(0.0025, 0.0005, HG - p.y);  // yuqori qirra
+  return mix(c, vec3(0.95,0.97,1.0), lip*0.6);
+}
 vec3 trace(vec3 ro, vec3 rd){
   vec3 acc = vec3(0.0), thr = vec3(1.0);
-  bool water = false;
+  bool water = false, viaTop = true;
   bool inside = (abs(ro.x) < WX && abs(ro.z) < WZ);
   for(int i=0;i<9;i++){
     if(!water){
@@ -245,7 +255,13 @@ vec3 trace(vec3 ro, vec3 rd){
       // devorlar
       if(!inside){
         vec3 n; float tw = boxEnter(ro, rd, n);
-        if(tw > 0.0){ float y = ro.y + rd.y*tw; if(y > 0.0 && y < HG){ tbest = tw; kind = (y < HW) ? 2 : 1; nb = n; } }
+        if(tw > 0.0){ float y = ro.y + rd.y*tw;
+          if(y > 0.0 && y < HG){ tbest = tw; kind = (y < HW) ? 2 : 1; nb = n; }
+          else if(y >= HG){                              // ochiq tepadan kirdi: ichki devorga urilishi mumkin
+            vec3 pe = ro + rd*(tw + 1e-5), n2; float te = boxExit(pe, rd, n2); float y2 = pe.y + rd.y*te;
+            if(y2 > HW && y2 < HG){ tbest = tw + 1e-5 + te; kind = 1; nb = n2; inside = true; }
+          }
+        }
       } else {
         vec3 n; float tw = boxExit(ro, rd, n);
         float y = ro.y + rd.y*tw;
@@ -262,45 +278,48 @@ vec3 trace(vec3 ro, vec3 rd){
       if(kind == 0){ acc += thr*env(rd); return acc; }
       vec3 p = ro + rd*tbest;
       if(kind == 4){ acc += thr*table(p); return acc; }
-      if(kind == 1){                                   // yupqa shisha (havo-havo): yo'nalish o'zgarmaydi
+      if(kind == 1 || kind == 2){                      // yupqa shisha devor: nurni sindirmaydi (faqat tus + qirralar)
         vec3 n = nb; if(dot(n,rd) > 0.0) n = -n;
         float F = fresnel(abs(dot(n,rd)), 1.0, 1.5);
-        acc += thr*F*env(reflect(rd,n))*1.3;
-        thr *= (1.0-F)*vec3(0.95,0.98,0.96);
-        float ek = edgeK(p); acc += thr*ek*vec3(0.25,0.4,0.36); thr *= 1.0-0.7*ek;
-        ro = p + rd*1e-4; inside = !inside; continue;
+        acc += thr*F*env(reflect(rd,n))*1.2;
+        thr *= (1.0-F)*vec3(0.93,0.97,0.95);
+        float ek = edgeK(p); acc += thr*ek*vec3(0.30,0.48,0.44); thr *= 1.0-0.75*ek;
+        acc += thr*smoothstep(0.0011, 0.0, abs(p.y-HW))*vec3(0.45,0.7,0.75);
+        ro = p + rd*1e-4;
+        if(kind == 2){ water = true; viaTop = false; inside = true; } else inside = !inside;
+        continue;
       }
-      vec3 n = (kind == 2) ? nb : surfN(p.xz);
-      if(kind == 2 && dot(n,rd) > 0.0) n = -n;
+      vec3 n = surfN(p.xz);
       float F = fresnel(abs(dot(n,rd)), 1.0, NW);
       acc += thr*F*env(reflect(rd,n))*1.25;
       thr *= (1.0-F);
-      if(kind == 2){ thr *= vec3(0.94,0.97,0.95); float ek = edgeK(p); acc += thr*ek*vec3(0.2,0.33,0.3); thr *= 1.0-0.7*ek; }
-      else acc += thr*0.05*smoothstep(0.004, 0.0, min(WX-abs(p.x), WZ-abs(p.z)));  // meniskus
+      acc += thr*0.12*smoothstep(0.003, 0.0, min(WX-abs(p.x), WZ-abs(p.z)));  // meniskus
       refr(rd, n, 1.0/NW);
-      ro = p + rd*1e-4; water = true; inside = true;
+      ro = p + rd*1e-4; water = true; inside = true; viaTop = true;
     } else {
       float tbest = 1e9; int kind = 0; vec3 nw;
       tbest = boxExit(ro, rd, nw); kind = 1;
       if(rd.y > 0.0){ float tw = (HW-ro.y)/rd.y; if(tw > 1e-5 && tw < tbest){ tbest = tw; kind = 2; } }
       else { float tb = (YB-ro.y)/rd.y; if(tb > 1e-5 && tb < tbest){ tbest = tb; kind = 3; } }
-      float tp = hitPencil(ro, rd, tbest);
-      vec3 absb = vec3(5.0,2.2,1.8);
-      if(tp > 0.0){ acc += thr*(1.0-exp(-absb*tp))*vec3(0.05,0.16,0.17); thr *= exp(-absb*tp); acc += thr*shadePencil(ro+rd*tp, rd)*0.93; return acc; }
-      acc += thr*(1.0-exp(-absb*tbest))*vec3(0.05,0.16,0.17);
+      float tp = viaTop ? hitPencil(ro, rd, tbest) : -1.0;
+      vec3 absb = vec3(4.5,1.7,1.4);
+      if(tp > 0.0){ acc += thr*(1.0-exp(-absb*tp))*vec3(0.012,0.05,0.065); thr *= exp(-absb*tp); acc += thr*shadePencil(ro+rd*tp, rd)*0.93; return acc; }
+      acc += thr*(1.0-exp(-absb*tbest))*vec3(0.012,0.05,0.065);
       thr *= exp(-absb*tbest);
       vec3 p = ro + rd*tbest;
       if(kind == 3){
-        acc += thr*table(vec3(p.x, 0.0, p.z))*vec3(0.78,0.86,0.83); return acc;
+        acc += thr*table(vec3(p.x, 0.0, p.z))*vec3(0.80,0.88,0.86); return acc;
       }
-      vec3 n = (kind == 1) ? nw : -surfN(p.xz);
+      if(kind == 1){                                   // yon devordan chiqish: sinmaydi
+        thr *= vec3(0.93,0.97,0.95); float ek = edgeK(p); acc += thr*ek*vec3(0.25,0.40,0.36); thr *= 1.0-0.75*ek;
+        ro = p + rd*1e-4; water = false; inside = false; continue; }
+      vec3 n = -surfN(p.xz);
       float F = fresnel(abs(dot(n,rd)), NW, 1.0);
       vec3 d = rd;
       if(refr(d, n, NW)){
         acc += thr*F*vec3(0.10,0.12,0.12);
         thr *= (1.0-F);
-        if(kind == 1){ thr *= vec3(0.94,0.97,0.95); float ek = edgeK(p); acc += thr*ek*vec3(0.2,0.33,0.3); thr *= 1.0-0.7*ek; inside = false; }
-        else inside = true;
+        inside = true;
         rd = d; ro = p + rd*1e-4; water = false;
       } else { rd = d; ro = p + rd*1e-4; }
     }
@@ -595,8 +614,8 @@ return {
         H.el('line', { x1: x, y1, x2: x, y2, stroke: c, 'stroke-width': 5 }, g);
         for (const y of [y1, y2]) H.el('line', { x1: x - 14, y1: y, x2: x + 14, y2: y, stroke: c, 'stroke-width': 5 }, g); return g; };
       el.bApp = bar(110, PY, APP[1], '#ffc83d'); el.lApp5 = H.tag(130, (PY + APP[1]) / 2 + 8, 'ko‘rinadi: 1,5 m', '#ffc83d', s, 'start', 26);
-      el.bReal = bar(400, PY, PB, '#fff'); el.lReal5 = H.tag(420, (PY + PB) / 2 + 40, 'aslida: 2 m', '#fff', s, 'start', 26);
-      el.pForm = H.tag(940, 300, '2 m : 1,33 ≈ 1,5 m', '#fff', s, 'end', 24);
+      el.bReal = bar(768, PY, PB, '#fff'); el.lReal5 = H.tag(788, (PY + PB) / 2 + 10, 'aslida: 2 m', '#fff', s, 'start', 22);
+      el.pForm = H.tag(36, 46, '2 m : 1,33 ≈ 1,5 m', '#fff', s, 'start', 24);
       text(H, s, 20, 508, '* deyarli tik qaraganda; sxematik', { fill: '#203450', 'font-size': 18, 'font-weight': 400 });
     }
     // ===== 6: baliq va nayza =====
@@ -622,7 +641,8 @@ return {
       const E = el.fPers.eye, F = [660, 448];
       const S = snellPoint(F, E, WY, NW), aw = Math.atan2(F[0] - S[0], F[1] - WY), aa = Math.asin(NW * Math.sin(aw));
       const APPy = WY + (F[0] - S[0]) / Math.tan(aa);
-      el.fReal = fish(H, s, F[0], F[1], 0.85, 'r', { opacity: 0.32 });
+      el.fReal = fish(H, s, F[0], F[1], 0.85, 'r', { opacity: 0.5 });
+      H.el('path', { d: 'M88,0 C80,-26 40,-38 0,-36 C-40,-34 -64,-14 -76,0 C-64,14 -40,32 0,34 C40,36 80,26 88,0 Z M-70,0 C-104,-22 -112,-30 -122,-34 C-118,-12 -118,12 -122,34 C-112,30 -104,22 -70,0 Z', fill: 'none', stroke: '#e8f6ff', 'stroke-width': 3, 'stroke-dasharray': '8 7', opacity: .8, transform: `translate(${F[0]} ${F[1]}) scale(0.85)` }, s);
       el.fApp = fish(H, s, F[0], APPy, 0.85, 'a');
       el.qR = qMark(H, s, F[0] + 125, F[1]); el.qA = qMark(H, s, F[0] + 125, APPy);
       // nayza: qo'ldan ko'rinadigan baliq tomonga (odam ko'rgan joyga qarab turibdi)
@@ -652,8 +672,8 @@ return {
     }
     el.big = ['big0', 'big1', 'big2', 'big3', 'big4', 'big5', 'big6'].map(i => H.$(i));
     // qalam suv yuzasini kesgan joy (to'lqinlar markazi)
-    { const A = [0.040, 0.0085, 0.004], Bp = [-0.0665, 0.1338, -0.022], L = Math.hypot(Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]);
-      const u = [(Bp[0] - A[0]) / L, (Bp[1] - A[1]) / L, (Bp[2] - A[2]) / L], k = (0.095 - A[1]) / u[1];
+    { const A = [-0.010, 0.0085, -0.026], Bp = [-0.0665, 0.1236, 0.002], L = Math.hypot(Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]);
+      const u = [(Bp[0] - A[0]) / L, (Bp[1] - A[1]) / L, (Bp[2] - A[2]) / L], k = (0.100 - A[1]) / u[1];
       el.ripC = [A[0] + u[0] * k, A[2] + u[2] * k]; }
   },
 
@@ -661,9 +681,9 @@ return {
     // ---- 3D: akvariumdagi qalam (0-bo'lim: tushadi + kamera yaqinlashadi; keyin fon)
     const fall = clamp01(t / 0.55), lift = 0.03 * (1 - fall * fall);
     const kz = ramp(0, B[1], t);
-    const D = 0.40 - 0.07 * kz, el0 = (54 - 2 * kz) * DEG, az = (14 - 6 * kz + 0.4 * Math.max(0, t - B[1])) * DEG;
+    const D = 0.37 - 0.07 * kz, el0 = (44 - 2 * kz) * DEG, az = (14 - 6 * kz + 0.4 * Math.max(0, t - B[1])) * DEG;
     const pos = [Math.sin(az) * Math.cos(el0) * D, 0.062 + Math.sin(el0) * D, Math.cos(az) * Math.cos(el0) * D];
-    const cam = H.look(pos, [-0.008, 0.081, 0.004]);
+    const cam = H.look(pos, [-0.046, 0.088, -0.010]);
     H.set('uCamPos', pos); H.set('uCam', cam.m); H.set('uTanHalf', Math.tan(23 * DEG));
     H.set('uLift', lift); H.set('uExposure', 1.15); H.set('uFade', 1);
     H.set('uRipC', el.ripC); H.set('uRipT', t + 0.25); H.set('uRip', t < 2.6 ? 7e-5 * Math.exp(-t * 1.3) * (1 - ramp(2.0, 2.6, t)) : 0);

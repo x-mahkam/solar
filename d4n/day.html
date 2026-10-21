@@ -1,0 +1,935 @@
+<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sarob — yerdagi osmon</title>
+<style>
+  :root { color-scheme: dark; --navy: #0a182f; --yel: #ffc83d; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #fit { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #box { position: relative; flex: none; overflow: hidden; background: var(--navy); }
+  /* 3D sahna faqat yuqori "rasm zonasi"da: 1080x1040 */
+  #gl { position: absolute; left: 0; top: 0; width: 100%; height: 54.1667%; display: block; }
+  #stage {
+    position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; transform-origin: 0 0;
+    font-family: "DejaVu Sans", "Segoe UI", system-ui, sans-serif; color: #fff; pointer-events: none;
+  }
+  #dim { position: absolute; left: 0; right: 0; top: 0; height: 1040px; background: #050b18; opacity: 0; }
+  #topscrim { position: absolute; left: 0; right: 0; top: 0; height: 300px; background: linear-gradient(to bottom, rgba(3,8,20,.30), rgba(3,8,20,0)); }
+  #lowfade { position: absolute; left: 0; right: 0; top: 850px; height: 192px; background: linear-gradient(to bottom, rgba(10,24,47,0), var(--navy)); }
+  #ctabg { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 620px 520px at 50% 46%, #17305a 0%, var(--navy) 100%); }
+
+  #brand { position: absolute; left: 80px; top: 140px; font-weight: 700; font-size: 37px; letter-spacing: 1px; color: var(--yel); text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  #brand::after { content: ""; display: block; width: 132px; height: 6px; margin-top: 8px; border-radius: 3px; background: var(--yel); }
+  #badge { position: absolute; right: 60px; top: 116px; padding: 9px 22px 11px; text-align: right; border: 2.5px solid var(--yel); border-radius: 18px; background: rgba(7,13,28,.78); }
+  #badge small { display: block; font-size: 21px; font-weight: 700; letter-spacing: 1px; color: #dbe4f5; }
+  #badge b { display: block; font-size: 42px; line-height: 1.05; font-weight: 700; color: var(--yel); }
+
+  /* matn zonasi: y=1060 dan; Instagram pastki paneli (≈ oxirgi 380px) va o'ng tugmalar ustunidan tashqarida */
+  .cap { position: absolute; left: 80px; right: 90px; top: 1060px; opacity: 0; }
+  .cap h1 { margin: 0 0 24px; font-size: 64px; line-height: 1.17; font-weight: 700; color: var(--yel); }
+  .cap p { margin: 0; font-size: 42px; line-height: 1.4; color: #eef2f8; }
+  .cap.hook h1 { font-size: 88px; color: #fff; margin-bottom: 28px; }
+  .cap.hook p { font-size: 46px; color: #8fd0ff; opacity: 0; }
+
+  .card { position: absolute; opacity: 0; box-sizing: border-box; border-radius: 28px; background: #0b1630; border: 1.5px solid rgba(255,255,255,.14); box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+  .note { font-size: 22px; color: #9fb0cc; }
+
+  .chips { position: absolute; right: 60px; top: 470px; opacity: 0; display: flex; flex-direction: column; align-items: flex-end; }
+  .chip { display: flex; align-items: center; gap: 16px; width: max-content; margin-bottom: 16px; padding: 14px 24px; font-size: 32px; font-weight: 700; border-radius: 18px; background: rgba(5,10,24,.74); border: 1.5px solid rgba(255,255,255,.16); }
+  .red { color: #ff8d7a; } .blue { color: #86c5ff; } .yel { color: var(--yel); }
+
+
+
+
+  #cta { position: absolute; left: 0; right: 0; top: 0; height: 1920px; opacity: 0; text-align: center; }
+  #cta .k { position: absolute; left: 0; right: 0; top: 640px; font-size: 52px; font-weight: 700; color: var(--yel); letter-spacing: 1px; }
+  #cta .d { position: absolute; left: 0; right: 0; top: 720px; font-size: 38px; color: #b9c6dc; }
+  #cta .q { position: absolute; left: 90px; right: 90px; top: 830px; font-size: 76px; line-height: 1.22; font-weight: 700; }
+  #cta .like { position: absolute; left: 110px; right: 110px; top: 1270px; display: flex; gap: 26px; align-items: center; text-align: left; padding: 30px 36px; border-radius: 28px; background: rgba(22,38,70,.7); border: 1.5px solid rgba(130,160,210,.4); }
+  #cta .like b { display: block; font-size: 32px; margin-bottom: 10px; }
+  #cta .like span { font-size: 29px; color: #c9d5ea; line-height: 1.35; }
+  #err { position: absolute; left: 60px; right: 60px; top: 700px; font: 28px/1.4 monospace; color: #ff9a9a; white-space: pre-wrap; }
+  .card svg.full { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .chips.center { left: 0; right: 0; align-items: center; }
+  .tagbg { fill: rgba(5,10,24,.85); stroke: rgba(255,255,255,.18); }
+  #ov, #ov2 { position: absolute; left: 0; top: 0; width: 1080px; height: 1040px; }
+  .card.cc { left: 60px; right: 60px; top: 250px; height: 520px; overflow: hidden; background: #0b1630; }
+  .big { position: absolute; left: 30px; right: 30px; top: 790px; text-align: center; opacity: 0; transform-origin: 50% 50%; }
+  .big span { display: inline-block; padding: 14px 30px 18px; border-radius: 24px; background: rgba(5,10,24,.88); border: 2px solid rgba(255,255,255,.18);
+    font-size: 60px; line-height: 1.16; font-weight: 700; color: #fff; text-shadow: 0 3px 12px rgba(0,0,0,.6); box-shadow: 0 10px 34px rgba(0,0,0,.45); }
+  .big em { font-style: normal; color: #ffc83d; }
+  .big svg.ico { vertical-align: -6px; margin-right: 18px; }
+  #big0 { top: 870px; } #big0 span { font-size: 66px; border-color: rgba(255,200,61,.6); }
+  #big1 { top: 870px; }
+  #big6 { top: 905px; left: 10px; right: 10px; } #big6 span { font-size: 38px; padding: 10px 22px 13px; border-color: rgba(255,200,61,.6); }
+  #cta, #ctabg { display: none !important; }
+  .cap h1 { font-size: 54px; white-space: nowrap; margin: 0; }
+  .cap p:empty { display: none; }
+</style></head><body>
+<div id="fit"><div id="box">
+  <canvas id="gl"></canvas>
+  <div id="stage">
+    <div id="dim"></div><div id="topscrim"></div><div id="lowfade"></div><div id="ctabg"></div>
+    <div id="brand">FIZIKA HAYOTDA</div>
+    <div id="badge"><small>30 KUN · 30 SAVOL</small><b>KUN 4/30</b></div>
+    <svg id="ov" viewBox="0 0 1080 1040"></svg>
+    <div class="card cc" id="cHeat"><svg class="full" id="sHeat" viewBox="0 0 960 520"></svg></div>
+    <div class="card cc" id="cBend"><svg class="full" id="sBend" viewBox="0 0 960 520"></svg></div>
+    <svg id="ov2" viewBox="0 0 1080 1040"></svg>
+    <div class="big" id="big0"><span>BU SUV EMAS — <em>OSMON!</em></span></div>
+    <div class="big" id="big1"><span><svg class="ico" width="66" height="54" viewBox="0 0 66 54"><path d="M6,14 h12 l6,-8 h18 l6,8 h12 a4,4 0 0 1 4,4 v28 a4,4 0 0 1 -4,4 h-54 a4,4 0 0 1 -4,-4 v-28 a4,4 0 0 1 4,-4 z" fill="#ffc83d"/><circle cx="33" cy="31" r="13" fill="#0a1426"/><circle cx="33" cy="31" r="8.5" fill="#ffc83d"/><circle cx="30" cy="28" r="3" fill="#fff" opacity=".8"/><rect x="50" y="18" width="7" height="4" rx="1.5" fill="#0a1426"/></svg>Kamera ham <em>ko‘radi!</em></span></div>
+    <div class="big" id="big2"><span>Pastda — <em>issiq, siyrak havo</em></span></div>
+    <div class="big" id="big3"><span>Nur <em>yuqoriga egiladi</em></span></div>
+    <div class="big" id="big4"><span>Yerda — <em>osmon aksi</em></span></div>
+    <div class="big" id="big5"><span>Kema osmonda — <em>nega?</em></span></div>
+    <div class="big" id="big6"><span>Izohda yozing ↓ · <em>Do‘stingizga yuboring</em></span></div>
+
+<div class="cap hook" id="cap0"><h1></h1><p id="hookSub"></p></div>
+<div class="cap" id="cap1"><h1></h1><p></p></div>
+<div class="cap" id="cap2"><h1></h1><p></p></div>
+<div class="cap" id="cap3"><h1></h1><p></p></div>
+<div class="cap" id="cap4"><h1></h1><p></p></div>
+<div class="cap" id="cap5"><h1></h1><p></p></div>
+<div class="cap" id="cap6"><h1></h1><p></p></div>
+
+    <div id="cta">
+      <div class="k">ERTAGA</div>
+      <div class="d">Kun 5/30 · soat 19:30</div>
+      <div class="q"></div>
+      <div class="like"><svg width="78" height="70" viewBox="0 0 24 22"><path d="M12 20.5 C5 15.6 1.5 12 1.5 7.4 1.5 4.2 4 1.8 7 1.8c2 0 3.8 1.1 5 2.8 1.2-1.7 3-2.8 5-2.8 3 0 5.5 2.4 5.5 5.6 0 4.6-3.5 8.2-10.5 13.1z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><div><b>Yoqqan bo‘lsa — yurakchani bosing</b><span>va obuna bo‘ling: 30 kunlik savollarni o‘tkazib yubormaysiz</span></div></div>
+    </div>
+    <div id="err"></div>
+  </div>
+</div></div>
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform vec2  uRes;
+uniform float uT, uTanHalf, uFade, uBend, uCarZ, uExposure, uScene, uPhZ, uFlash;
+uniform vec3  uCamPos;
+uniform mat3  uCam;
+uniform vec2  uPhA, uPhB;   // telefon ekrani (kanvas uv: chap-past, o'ng-yuqori)
+uniform vec2  uPhTgt;   // telefon ekrani markazida ko'rinadigan nuqta (sp birligida)
+
+// Yozgi issiq asfalt yo'l + sarob (pastki sarob: juda qiya nur issiq qatlamda yuqoriga egiladi).
+// Sarob soddalashtirilgan: yerga a < uBend burchak bilan tushgan nur ko'zgudagidek yuqoriga qaytadi.
+// uScene = 1: sovuq dengiz (yuqori sarob sahnasi; kema SVG'da).
+const vec3 SUN = normalize(vec3(0.42, 0.80, -0.42));
+
+float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash2(i),hash2(i+vec2(1,0)),f.x), mix(hash2(i+vec2(0,1)),hash2(i+vec2(1,1)),f.x), f.y); }
+float fbm(vec2 p){ float a=0.5,s=0.0; for(int i=0;i<4;i++){ s+=a*vnoise(p); p=p*2.03+vec2(17.3,9.1); a*=0.5; } return s; }
+
+// ---------------- yozgi osmon ----------------
+vec3 skyS(vec3 d){
+  float y = max(d.y, 0.0);
+  vec3 c = mix(vec3(0.60,0.73,0.90), vec3(0.14,0.36,0.80), pow(smoothstep(0.0, 0.05, y), 0.6));
+  float mu = max(dot(d, SUN), 0.0);
+  c += vec3(1.0,0.95,0.85)*0.10*pow(mu, 6.0);
+  vec2 q = d.xz/(d.y + 0.035);
+  float cl = smoothstep(0.56, 0.82, fbm(q*0.9 + vec2(3.0 + uT*0.004, 1.7)));
+  float sh = vnoise(q*3.0 + vec2(3.05, 1.72));
+  vec3 cc = mix(vec3(0.80,0.83,0.88), vec3(1.0), smoothstep(0.2, 0.8, sh));
+  c = mix(c, cc, cl*0.85*smoothstep(0.004, 0.05, d.y));
+  return c;
+}
+// ---------------- sovuq osmon (dengiz) ----------------
+vec3 skyC(vec3 d){
+  float y = max(d.y, 0.0);
+  vec3 c = mix(vec3(0.50,0.66,0.84), vec3(0.10,0.30,0.66), pow(smoothstep(0.0, 0.04, y), 0.65));
+  vec2 q = d.xz/(d.y + 0.04);
+  float cl = smoothstep(0.45, 0.85, fbm(q*0.6 + vec2(1.0 + uT*0.003, 4.0)));
+  c = mix(c, vec3(0.86,0.90,0.95), cl*0.18*smoothstep(0.005, 0.06, d.y));
+  return c;
+}
+
+float sdBox(vec3 p, vec3 b){ vec3 q = abs(p)-b; return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0); }
+float sdRBox(vec3 p, vec3 b, float r){ return sdBox(p, b - r) - r; }
+// yengil avtomobil (sedan). Old tomoni -z (bizga qarab keladi).
+float sdCarL(vec3 q){
+  vec3 qb = q - vec3(0.0,0.53,0.0); qb.x /= 1.0 - 0.10*smoothstep(0.1, 0.34, qb.y);
+  float body = sdRBox(qb, vec3(0.89,0.37,2.22), 0.22);
+  body = max(body, q.y - 0.88 + 0.12*smoothstep(1.1, 2.2, abs(q.z)));
+  float und = sdBox(q - vec3(0.0,0.12,0.0), vec3(0.74,0.125,1.95));
+  body = min(body, und);
+  vec3 c = q - vec3(0.0,1.10,0.20);
+  float sx = 1.0 - 0.55*c.y, sz = 1.0 - 1.45*c.y;
+  float cab = sdRBox(vec3(c.x/sx, c.y, c.z/sz), vec3(0.76,0.25,0.98), 0.08)*min(sx, sz);
+  vec2 w1 = vec2(length(q.yz - vec2(0.34, 1.36)) - 0.34, abs(abs(q.x)-0.76) - 0.11);
+  vec2 w2 = vec2(length(q.yz - vec2(0.34,-1.36)) - 0.34, abs(abs(q.x)-0.76) - 0.11);
+  float wl = min(min(max(w1.x,w1.y),0.0)+length(max(w1,0.0)), min(max(w2.x,w2.y),0.0)+length(max(w2,0.0))) - 0.02;
+  float mir = sdRBox(vec3(abs(q.x)-0.97, q.y-0.98, q.z+0.52), vec3(0.10,0.06,0.04), 0.02);
+  return min(min(min(body, cab), wl), mir);
+}
+vec3 carPos(){ return vec3(1.75, 0.0, uCarZ); }
+float sdCar(vec3 p){ return sdCarL(p - carPos()); }
+float carHit(vec3 ro, vec3 rd){
+  vec3 lo = carPos() + vec3(-1.15, -0.05, -2.45), hi = carPos() + vec3(1.15, 1.45, 2.45);
+  vec3 ir = 1.0/rd, t0 = (lo-ro)*ir, t1 = (hi-ro)*ir;
+  vec3 tn = min(t0,t1), tf = max(t0,t1);
+  float a = max(max(tn.x,tn.y),tn.z), b = min(min(tf.x,tf.y),tf.z);
+  if(b < max(a,0.0)) return -1.0;
+  float t = max(a, 0.0), res = -1.0;
+  for(int i=0;i<48;i++){
+    float d = sdCar(ro + rd*t);
+    if(d < 0.004){ res = t; break; }
+    t += max(d*0.85, 0.004);
+    if(t > b) break;
+  }
+  return res;
+}
+vec3 carCol(vec3 p, vec3 rd){
+  vec3 q = p - carPos();
+  vec2 e = vec2(0.008, 0.0);
+  vec3 n = normalize(vec3(sdCar(p+e.xyy)-sdCar(p-e.xyy), sdCar(p+e.yxy)-sdCar(p-e.yxy), sdCar(p+e.yyx)-sdCar(p-e.yyx)));
+  vec3 alb = vec3(0.70,0.06,0.05); float gloss = 0.22, emit = 0.0;
+  float ax = abs(q.x);
+  if(q.y > 0.90 && q.y < 1.30){
+    float wx = 0.66 - 0.40*(q.y-0.90);
+    if((abs(n.z) > 0.35 && ax < wx) || (abs(n.x) > 0.55 && q.z > -0.62 && q.z < 1.02 && abs(q.z-0.20) > 0.04)) { alb = vec3(0.03,0.04,0.05); gloss = 0.45; }
+  }
+  if(q.y > 1.30) alb *= 0.92;
+  if(q.z < -2.0){
+    if(q.y > 0.62 && q.y < 0.76 && ax > 0.46 && ax < 0.80){ alb = vec3(0.95,0.95,0.90); emit = 0.5; gloss = 0.6; }
+    else if(q.y > 0.44 && q.y < 0.68 && ax < 0.40) alb = vec3(0.05,0.05,0.06);
+    else if(q.y > 0.27 && q.y < 0.34 && ax < 0.62) alb = vec3(0.06,0.06,0.07);
+    if(q.y > 0.36 && q.y < 0.43 && ax < 0.22) alb = vec3(0.92);
+  }
+  if(q.y < 0.18) alb = vec3(0.04);
+  if(q.y < 0.70 && (length(q.yz - vec2(0.34, 1.36)) < 0.36 || length(q.yz - vec2(0.34,-1.36)) < 0.36) && ax > 0.62){
+    alb = vec3(0.035); gloss = 0.05;
+    if(length(q.yz - vec2(0.34, sign(q.z)*1.36)) < 0.19) alb = vec3(0.55);
+  }
+  float dif = max(dot(n, SUN), 0.0);
+  vec3 r = reflect(rd, n);
+  float fr = gloss*(0.25 + 0.75*pow(1.0 - max(dot(-rd, n), 0.0), 3.0));
+  float sp = pow(max(dot(r, SUN), 0.0), 60.0);
+  vec3 amb = mix(vec3(0.42,0.38,0.30), vec3(0.62,0.72,0.88), 0.5 + 0.5*n.y);
+  return alb*(amb*0.75 + 1.0*dif) + alb*emit + fr*skyS(r) + sp*gloss*1.5;
+}
+// ustunlar (yo'l chetida, har 45 m)
+float poleHit(vec3 ro, vec3 rd, out vec3 pc){
+  float best = 1e9; pc = vec3(0.0);
+  for(int s=0;s<2;s++){
+    float X = s==0 ? 6.2 : -6.6, off = s==0 ? 0.0 : 22.0;
+    if(abs(rd.x) < 1e-5) continue;
+    float t = (X - ro.x)/rd.x;
+    if(t <= 0.0 || t > 2500.0) continue;
+    vec3 p = ro + rd*t;
+    float cz = (p.z - off)/45.0, k = abs(fract(cz) - 0.5)*45.0;   // ustundan masofa (m)
+    float w = 22.5 - k;
+    float h = 8.5;
+    if(w < 0.16 && p.y < h && p.y > -0.5){
+      if(t < best){ best = t; float side = w/0.16; pc = mix(vec3(0.20,0.17,0.14), vec3(0.42,0.37,0.31), side)*(0.7 + 0.4*SUN.y); }
+    }
+    // ko'ndalang tirgak
+    if(w < 0.8 && p.y > h - 0.9 && p.y < h - 0.72 && t < best){ best = t; pc = vec3(0.18,0.16,0.14); }
+  }
+  return best;
+}
+// uzoqdagi daraxtlar qatori
+float treeH(float x){ float b = fbm(vec2(x/18.0, 3.1)); return (2.0 + 9.0*b*b + 2.5*vnoise(vec2(x/4.0, 7.7)))*smoothstep(0.25, 0.4, fbm(vec2(x/90.0, 1.3))) ; }
+bool treeHit(vec3 ro, vec3 rd, out vec3 tc, out float tt){
+  tc = vec3(0.0); tt = 1e9;
+  float Z = uCamPos.z + 1400.0;
+  if(rd.z <= 0.0) return false;
+  float t = (Z - ro.z)/rd.z; vec3 p = ro + rd*t;
+  if(p.y > -2.0 && p.y < 15.0 && p.y < treeH(p.x)){
+    tt = t;
+    float v = fbm(p.xy*0.4);
+    tc = mix(vec3(0.10,0.16,0.07), vec3(0.22,0.30,0.12), v);
+    return true;
+  }
+  return false;
+}
+vec3 haze(vec3 c, float t){ return mix(c, vec3(0.62,0.73,0.88), 1.0 - exp(-t*0.00042)); }
+vec3 groundCol(vec3 p, float dist){
+  float ax = abs(p.x);
+  float fz = clamp(60.0/dist, 0.0, 1.0);                 // uzoqda tekstura so'nadi
+  vec3 grass = mix(vec3(0.42,0.40,0.18), vec3(0.62,0.55,0.28), mix(0.5, fbm(p.xz*vec2(0.3, 0.05)), 0.6 + 0.4*fz));
+  grass = mix(grass, vec3(0.30,0.36,0.14), 0.35*smoothstep(0.55, 0.75, fbm(p.xz*vec2(0.15,0.03) + 5.0)));
+  vec3 road = vec3(0.12,0.12,0.13)*(0.9 + 0.25*fz*(fbm(p.xz*vec2(1.2,0.3)) - 0.5));
+  float aa = clamp(dist*0.0011, 0.004, 0.6);
+  float edge = smoothstep(0.10+aa, 0.10, abs(ax - 3.35));
+  float dash = smoothstep(0.08+aa, 0.08, ax)*step(fract(p.z/12.0), 0.45);
+  road = mix(road, vec3(0.88), max(edge, dash*smoothstep(1800.0, 400.0, dist)));
+  vec3 c = mix(road, grass, smoothstep(3.6, 4.3, ax));
+  // mashina soyasi
+  vec3 cq = p - carPos();
+  c *= 1.0 - 0.6*smoothstep(0.3, 0.0, sdBox(vec3(cq.x + 0.25, 0.0, cq.z), vec3(0.85, 1.0, 2.1)));
+  return c*(0.62 + 0.55*SUN.y);
+}
+// yerga tegmaydigan nur: mashina, ustun, daraxt, osmon
+vec3 upward(vec3 ro, vec3 rd, vec3 sd){
+  float tc = carHit(ro, rd);
+  vec3 pcol = vec3(0.0); float tp = 1e9;
+  vec3 tcol; float tt; bool th = treeHit(ro, rd, tcol, tt);
+  float tb = 1e9; vec3 c = skyS(sd);
+  if(th){ tb = tt; c = haze(tcol, tt); }
+  if(tp < tb){ tb = tp; c = haze(pcol, tp); }
+  if(tc > 0.0 && tc < tb){ c = haze(carCol(ro + rd*tc, rd), tc); }
+  return c;
+}
+vec3 road(vec3 ro, vec3 rd){
+  if(rd.y >= 0.0) return upward(ro, rd, rd);
+  float tg = -ro.y/rd.y;
+  float tc = carHit(ro, rd);
+  vec3 pcol = vec3(0.0); float tp = 1e9;
+  vec3 tcol; float tt; bool th = treeHit(ro, rd, tcol, tt);
+  if(th && tt < tg && tt < tp && (tc < 0.0 || tt < tc)) return haze(tcol, tt);
+  if(tp < tg && (tc < 0.0 || tp < tc)) return haze(pcol, tp);
+  if(tc > 0.0 && tc < tg) return haze(carCol(ro + rd*tc, rd), tc);
+  vec3 g = ro + rd*tg;
+  vec3 c = haze(groundCol(g, tg), tg);
+  float a = -rd.y;
+  // sarob chegarasi sal tebranadi (havo oqimi), yo'l ustida kuchliroq
+  float th0 = uBend*(1.0 + 0.34*(fbm(vec2(g.x*0.45 + uT*0.4, g.z*0.012 - uT*0.9)) - 0.5)*2.0);
+  float onRoad = 1.0 - 0.85*smoothstep(3.6, 5.5, abs(g.x));
+  float m = smoothstep(th0, th0*0.86, a)*onRoad;
+  if(m > 0.002){
+    vec3 r = vec3(rd.x, a, rd.z);
+    r.y += a*0.06*(vnoise(vec2(g.x*0.8 + uT*1.0, g.z*0.05 - uT*2.6)) - 0.5);
+    r = normalize(r);
+    vec3 gr = vec3(g.x, 0.001, g.z);
+    vec3 rc = upward(gr, r, normalize(vec3(r.x, r.y*1.9 + 0.006, r.z)));
+    c = mix(c, haze(rc*0.96, tg), 0.93*m);
+  }
+  return c;
+}
+// ---------------- sovuq dengiz ----------------
+float waveH(vec2 p){
+  float h = 0.0;
+  h += 0.10*sin(dot(p, vec2(0.21, 0.98))*0.55 + uT*1.3);
+  h += 0.07*sin(dot(p, vec2(-0.6, 0.8))*0.9 + uT*1.7);
+  h += 0.05*sin(dot(p, vec2(0.9, 0.44))*1.6 + uT*2.3);
+  h += 0.08*(fbm(p*vec2(0.35, 0.18) + vec2(uT*0.12, uT*0.25)) - 0.5);
+  return h;
+}
+vec3 sea(vec3 ro, vec3 rd){
+  if(rd.y >= 0.0) return skyC(rd);
+  float t = -ro.y/rd.y;
+  vec3 p = ro + rd*t;
+  float e = 0.08 + t*0.004;
+  float k = clamp(25.0/t, 0.06, 1.0);
+  vec2 g = vec2(waveH(p.xz + vec2(e,0.0)) - waveH(p.xz - vec2(e,0.0)), waveH(p.xz + vec2(0.0,e)) - waveH(p.xz - vec2(0.0,e)))/(2.0*e);
+  vec3 n = normalize(vec3(-g.x*k, 1.0, -g.y*k*0.7));
+  vec3 r = reflect(rd, n); r.y = abs(r.y);
+  float fr = 0.03 + 0.97*pow(1.0 - max(dot(-rd, n), 0.0), 5.0);
+  vec3 water = vec3(0.008,0.045,0.13);
+  vec3 c = mix(water, skyC(r)*vec3(0.80,0.90,1.0), clamp(fr*0.55, 0.0, 1.0));
+  c += vec3(0.9,0.95,1.0)*0.25*pow(clamp(n.x*0.5 + n.z*0.4 + 0.5, 0.0, 1.0), 24.0)*k;
+  c = mix(c, vec3(0.42,0.58,0.78), 1.0 - exp(-t*0.00022));
+  return c;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
+void main(){
+  vec2 uv = gl_FragCoord.xy/uRes;
+  vec2 sp = (gl_FragCoord.xy*2.0 - uRes)/uRes.y;
+  vec4 uPh = vec4(uPhA, uPhB);
+  bool inPh = uPhZ > 0.0 && uv.x > uPh.x && uv.x < uPh.z && uv.y > uPh.y && uv.y < uPh.w;
+  if(inPh){
+    vec2 c = (vec2((uPh.x+uPh.z)*0.5, (uPh.y+uPh.w)*0.5)*uRes*2.0 - uRes)/uRes.y;
+    sp = (sp - c)/uPhZ + uPhTgt;
+  }
+  vec3 rd = normalize(uCam*vec3(sp*uTanHalf, 1.0));
+  vec3 col = uScene > 0.5 ? sea(uCamPos, rd) : road(uCamPos, rd);
+  col = aces(col*uExposure);
+  col = pow(col, vec3(1.0/2.2));
+  col = mix(vec3(dot(col, vec3(0.2126,0.7152,0.0722))), col, 1.25);
+  col = (col-0.5)*1.06+0.5;
+  vec2 vq = uv-0.5;
+  col *= 1.0-0.45*dot(vq,vq);
+  if(inPh){ col = (col - 0.5)*1.08 + 0.52; col = mix(col, vec3(1.0), uFlash); }
+  col += (hash2(gl_FragCoord.xy+fract(uT)*61.0)-0.5)*0.016;
+  fragColor = vec4(col*uFade, 1.0);
+}
+</script>
+
+<script>
+window.DAY = Object.assign({"DUR": 44.18, "caps": [[0, 2.62], [2.62, 6.76], [6.76, 14.42], [14.42, 22.8], [22.8, 32.13], [32.13, 40.0], [40.0, 44.18]], "cta": 44.18, "sub": 0}, (() => {
+// Kun 4 (yangi): Sarob — ovoz v4n/voice.wav (44,18 s) vaqt chizig'i bo'yicha
+const B = [0, 2.62, 6.76, 14.42, 22.80, 32.13, 40.00, 44.18];
+const DEG = Math.PI / 180;
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const ramp = (a, b, t) => { const x = clamp01((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+const win = (a, b, t, fi = 0.3, fo = 0.25) => ramp(a, a + fi, t) * (1 - ramp(b - fo, b, t));
+const el = {};
+const text = (H, p, x, y, s, at) => { const e = H.el('text', Object.assign({ x, y, 'font-size': 26, 'font-weight': 700, fill: '#fff' }, at), p); e.textContent = s; return e; };
+const f1 = v => (+v).toFixed(1);
+// kamera (yo'l): teleob'ektiv, ko'z balandligi 1,3 m, ufq y=440 da
+const TANH = Math.tan(2.4 * DEG), HOR_Y = 440, EYE_H = 1.3, CAMX = -1.6;
+const PITCH = -Math.atan((520 - HOR_Y) / 520 * TANH);
+const camZ = t => 8 * t;
+const carD = t => t < 6.76 ? 300 - 14 * t : t < 26.4 ? 300 - 14 * 6.76 : 292 - 14 * (t - 26.4);
+// dengiz kamerasi: ufq y=600
+const SEA_HOR = 600, SEA_PITCH = Math.atan((SEA_HOR - 520) / 520 * TANH);
+// telefon (landshaft): markaz, ekran teshigi (lokal)
+const PHW = 380, PHH = 185, SCW = 358, SCH = 163;
+const PH_TGT = [-0.17, 0.12];   // ekranda ko'rinadigan markaz (sp)
+const PH_Z = 1.7;
+// ---------- realistik odam (yon ko'rinish, o'ngga qaragan): bosh d1n/d22 dan, tana qo'shildi ----------
+// lokal koordinata: bosh d1n yo'llari, tovon y=2690; bo'yi ≈ 2600 birlik
+const HEAD_D = 'M330,640 C328,540 318,480 300,440 C258,410 226,350 224,280 C222,170 300,96 405,92 C505,88 556,150 562,215 C564,236 570,246 574,256 C572,264 566,268 567,276 C578,292 600,312 612,326 C614,334 604,338 586,338 C590,344 594,348 593,354 C588,358 584,362 586,364 C592,368 592,374 586,378 C580,384 578,388 580,394 C588,404 588,416 578,426 C562,436 540,438 520,436 L512,470 C510,520 512,580 514,640 Z';
+const HAIR_D = 'M560,196 C556,140 506,96 430,88 C340,80 250,122 224,210 C210,262 214,330 236,384 C250,414 272,436 300,446 C306,420 310,398 318,380 C326,360 332,344 334,330 C330,300 334,270 348,250 C372,222 410,206 452,200 C490,194 528,196 560,196 Z';
+let HEAD_ROT = 8;
+function personSide(H, p, fx, fy, hgt, sfx) {
+  const s = hgt / 2600;
+  const g = H.el('g', { transform: `translate(${fx},${fy}) scale(${s.toFixed(4)}) translate(-420,-2690)` }, p), dg = H.el('defs', {}, g);
+  const grad = (id, stops, at) => { const e = H.el('linearGradient', Object.assign({ id: id + sfx, x1: 0, y1: 0, x2: 1, y2: 1 }, at || {}), dg); stops.forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, e)); };
+  const rg = H.el('radialGradient', { id: 'sk' + sfx, cx: 0.62, cy: 0.38, r: 0.75 }, dg);
+  [[0, '#f0c4a2'], [0.6, '#d9a07c'], [1, '#a8714f']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, rg));
+  grad('sh', [[0, '#3b6fb0'], [1, '#1d3a66']]);
+  grad('hr', [[0, '#5a3a24'], [0.5, '#3a2416'], [1, '#22150c']]);
+  grad('jn', [[0, '#3c4f74'], [1, '#1c2740']], { x2: 0, y2: 1 });
+  const gb = H.el('g', { transform: 'translate(420 0) scale(1.32 1) translate(-420 0)' }, g);
+  // orqadagi oyoq (to'qroq)
+  H.el('path', { d: 'M300,1380 C296,1700 300,2100 318,2600 L410,2600 C404,2200 410,1800 430,1460 Z', fill: '#18223a' }, gb);
+  H.el('path', { d: 'M300,2590 L420,2590 C470,2592 520,2616 534,2660 L536,2690 L296,2690 Z', fill: '#1a1a1e' }, gb);
+  // oldingi oyoq
+  H.el('path', { d: 'M330,1380 L566,1380 C574,1600 560,1900 548,2600 L440,2600 C436,2250 430,1900 420,1640 C400,1600 340,1500 330,1380 Z', fill: 'url(#jn' + sfx + ')' }, gb);
+  H.el('path', { d: 'M500,1700 C510,1900 506,2200 498,2560', fill: 'none', stroke: '#101830', 'stroke-width': 8, opacity: .5 }, gb);
+  H.el('path', { d: 'M432,2580 L560,2580 C620,2584 680,2610 694,2662 L696,2690 L428,2690 Z', fill: '#26262b' }, gb);
+  H.el('path', { d: 'M428,2672 L696,2672 L696,2690 L428,2690 Z', fill: '#e8e8e8' }, gb);
+  // tana (futbolka)
+  H.el('path', { d: 'M318,600 C360,572 500,566 566,612 C612,700 612,860 590,1000 C584,1150 580,1290 572,1400 L292,1400 C284,1250 276,1100 280,950 C276,800 280,680 318,600 Z', fill: 'url(#sh' + sfx + ')' }, gb);
+  H.el('path', { d: 'M292,1360 L572,1360 L574,1410 L290,1410 Z', fill: '#2a2a30' }, gb);   // kamar
+  grad('shd', [[0, 'rgba(0,0,0,.42)'], [0.45, 'rgba(0,0,0,.08)'], [0.8, 'rgba(255,255,255,0)'], [1, 'rgba(255,240,210,.22)']], { x2: 1, y2: 0 });
+  H.el('path', { d: 'M318,600 C360,572 500,566 566,612 C612,700 612,860 590,1000 C584,1150 580,1290 572,1400 L292,1400 C284,1250 276,1100 280,950 C276,800 280,680 318,600 Z', fill: 'url(#shd' + sfx + ')' }, gb);
+  H.el('path', { d: 'M330,1380 L566,1380 C574,1600 560,1900 548,2600 L440,2600 C436,2250 430,1900 420,1640 C400,1600 340,1500 330,1380 Z', fill: 'url(#shd' + sfx + ')' }, gb);
+  H.el('path', { d: 'M330,1400 C420,1440 520,1440 570,1410 L568,1470 C500,1500 400,1490 330,1450 Z', fill: 'rgba(0,0,0,.18)' }, gb);
+  // bosh (d1n)
+  const hd = H.el('g', { transform: `rotate(${HEAD_ROT} 420 600) translate(420 600) scale(1.1) translate(-420 -600)` }, g);
+  H.el('path', { d: HEAD_D, fill: 'url(#sk' + sfx + ')' }, hd);
+  H.el('path', { d: 'M520,436 C500,430 476,420 458,404', fill: 'none', stroke: '#9a6446', 'stroke-width': 4, opacity: .6 }, hd);
+  H.el('path', { d: HAIR_D, fill: 'url(#hr' + sfx + ')', stroke: '#7a5236', 'stroke-width': 3, 'stroke-opacity': .6 }, hd);
+  for (const d of ['M520,130 C470,108 400,104 340,124', 'M480,112 C410,98 330,112 280,160', 'M300,150 C262,190 246,250 252,320'])
+    H.el('path', { d, fill: 'none', stroke: '#7a5236', 'stroke-width': 6, opacity: .55, 'stroke-linecap': 'round' }, hd);
+  H.el('path', { d: 'M356,258 C330,252 314,274 316,302 C318,330 334,348 354,346 C364,336 360,324 368,314 C376,300 378,270 356,258 Z', fill: '#cf9472', stroke: '#9a6446', 'stroke-width': 4 }, hd);
+  H.el('path', { d: 'M546,263 Q556,256 567,262 Q557,268 546,263 Z', fill: '#f4efe9' }, hd);
+  H.el('circle', { cx: 561, cy: 261, r: 5, fill: '#3a2618' }, hd);
+  H.el('path', { d: 'M540,246 Q556,239 573,247', fill: 'none', stroke: '#3a2618', 'stroke-width': 8, 'stroke-linecap': 'round' }, hd);
+  H.el('path', { d: 'M586,329 Q594,334 601,331', fill: 'none', stroke: '#8a5a40', 'stroke-width': 4, 'stroke-linecap': 'round' }, hd);
+  H.el('path', { d: 'M586,364 Q578,366 572,365', fill: 'none', stroke: '#8a5a40', 'stroke-width': 4, 'stroke-linecap': 'round' }, hd);
+  const gb2 = H.el('g', { transform: 'translate(420 0) scale(1.32 1) translate(-420 0)' }, g);
+  // qo'l (yeng + bilak + kaft), tana ustida
+  H.el('path', { d: 'M360,640 C460,610 520,680 512,800 L500,1000 L410,1000 L400,800 C396,720 380,680 360,640 Z', fill: '#2c5a98' }, gb2);
+  H.el('path', { d: 'M412,990 L500,990 C506,1120 510,1250 508,1340 L428,1340 C424,1240 418,1110 412,990 Z', fill: 'url(#sk' + sfx + ')' }, gb2);
+  H.el('path', { d: 'M426,1330 L510,1330 C520,1390 512,1450 478,1470 C446,1474 428,1440 426,1330 Z', fill: '#c98f6a' }, gb2);
+  H.el('path', { d: 'M360,640 C460,610 520,680 512,800 L500,1000 L410,1000 L400,800 C396,720 380,680 360,640 Z', fill: 'url(#shd' + sfx + ')' }, gb2);
+  H.el('path', { d: 'M412,990 L500,990 C506,1120 510,1250 508,1340 L428,1340 C424,1240 418,1110 412,990 Z', fill: 'url(#shd' + sfx + ')', opacity: .7 }, gb2);
+  // ko'z nuqtasi (sahna koordinatasida)
+  const ex = (561 - 420) * 1.1, ey = (262 - 600) * 1.1, c = Math.cos(HEAD_ROT * DEG), sn = Math.sin(HEAD_ROT * DEG);
+  const lx = 420 + ex * c - ey * sn, ly = 600 + ex * sn + ey * c;
+  return { g, eye: [fx + (lx - 420) * s, fy + (ly - 2690) * s], top: fy - 2600 * s };
+}
+
+// ---------- seed tasodifiy ----------
+let SEED = 7; const rnd = () => (SEED = (SEED * 16807) % 2147483647) / 2147483647;
+
+// ---------- qo'l (o'ng): lokal koordinata — telefonning o'ng qirrasi markazi (0,0), y pastga ----------
+function handBack(H, p, sfx) {
+  const g = H.el('g', {}, p);
+  // yeng (ko'ylak) va bilak
+  H.el('path', { d: 'M-96,640 L-60,360 C-20,344 110,344 156,362 L210,640 Z', fill: '#2c4f86' }, g);
+  H.el('path', { d: 'M-60,360 C-20,344 110,344 156,362 L160,384 C110,368 -20,368 -63,384 Z', fill: '#223e6c' }, g);
+  H.el('path', { d: 'M20,400 C30,480 30,560 24,640 M100,396 C116,470 124,560 128,640', fill: 'none', stroke: '#1a3157', 'stroke-width': 4, opacity: .7 }, g);
+  H.el('path', { d: 'M-46,366 C-52,300 -60,240 -54,184 C-48,132 -14,94 30,84 C74,76 102,104 106,160 C108,220 120,300 140,366 Z', fill: 'url(#hSk' + sfx + ')' }, g);
+  H.el('path', { d: 'M104,176 C106,240 116,310 134,366', fill: 'none', stroke: '#8f5a3e', 'stroke-width': 3, opacity: .45 }, g);
+  // barmoqlar uchi (orqada, o'ng qirradan chiqib turgan bo'g'imlar)
+  H.el('path', { d: 'M0,-40 C26,-44 40,-30 38,-10 C36,6 20,12 0,10 Z M0,24 C24,22 36,36 34,54 C32,70 16,74 0,72 Z', fill: 'url(#hSk' + sfx + ')', stroke: '#9a6446', 'stroke-width': 2 }, g);
+  // ko'rsatkich barmoq: yuqori burchakni ushlab turadi
+  H.el('path', { d: 'M4,-60 C34,-80 46,-120 40,-150 C34,-182 10,-204 -22,-206 C-48,-207 -62,-194 -56,-180 C-48,-168 -24,-172 -12,-156 C-2,-140 -2,-100 -4,-60 Z', fill: 'url(#hSk' + sfx + ')', stroke: '#9a6446', 'stroke-width': 2 }, g);
+  H.el('path', { d: 'M-54,-188 C-44,-198 -28,-201 -16,-197', fill: 'none', stroke: '#f2c9b0', 'stroke-width': 4, opacity: .7, 'stroke-linecap': 'round' }, g);
+  return g;
+}
+function handFront(H, p, sfx) {
+  const g = H.el('g', {}, p);
+  const TH = 'M104,176 C80,128 30,104 -56,86 C-88,79 -112,66 -128,68 C-146,71 -150,94 -134,102 C-104,112 -66,126 -34,142 C-4,158 14,190 20,250 C50,262 90,240 104,176 Z';
+  H.el('path', { d: TH, fill: '#000', opacity: .28, transform: 'translate(7 10)' }, g);       // soya
+  H.el('path', { d: TH, fill: 'url(#hTh' + sfx + ')', stroke: '#9a6446', 'stroke-width': 2 }, g);
+  // tirnoq
+  H.el('path', { d: 'M-140,84 C-140,74 -130,70 -118,72 C-108,74 -102,82 -106,90 C-112,96 -128,96 -136,92 Z', fill: '#f2cbb6', stroke: '#c58f76', 'stroke-width': 1.5 }, g);
+  H.el('path', { d: 'M-139,80 C-136,74 -130,72 -124,72', fill: 'none', stroke: '#fff4ec', 'stroke-width': 2.5, opacity: .8 }, g);
+  // bo'g'im burmalari va yorug' qirra
+  H.el('path', { d: 'M-62,92 C-58,102 -60,114 -66,122 M-54,90 C-50,98 -51,108 -56,116', fill: 'none', stroke: '#9a6446', 'stroke-width': 1.8, opacity: .65 }, g);
+  H.el('path', { d: 'M-120,70 C-80,76 -30,92 30,124', fill: 'none', stroke: '#f6d6c0', 'stroke-width': 4, opacity: .45, 'stroke-linecap': 'round' }, g);
+  return g;
+}
+function skinDefs(H, dg, sfx) {
+  const gr = H.el('linearGradient', { id: 'hSk' + sfx, x1: 0, y1: 0, x2: 1, y2: 0.4 }, dg);
+  [[0, '#e9b896'], [0.55, '#d39a76'], [1, '#a8714f']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, gr));
+  const g2 = H.el('linearGradient', { id: 'hTh' + sfx, x1: 0, y1: 0, x2: 0.15, y2: 1 }, dg);
+  [[0, '#f0c4a2'], [0.45, '#dca37e'], [1, '#a46c4c']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, g2));
+}
+
+// ---------- kema (yon ko'rinish, burni chapda); suv chizig'i y=0 ----------
+function drawShip(H, p) {
+  const g = H.el('g', {}, p);
+  SEED = 11;
+  H.el('path', { d: 'M-186,-34 L164,-28 L164,0 L-150,0 Q-172,-14 -186,-34 Z', fill: '#26313f' }, g);
+  H.el('path', { d: 'M-186,-34 L164,-28 L164,-23 L-180,-28 Z', fill: '#4a5668' }, g);
+  H.el('path', { d: 'M-158,-5 L164,-5 L164,0 L-150,0 Z', fill: '#7a3a30' }, g);
+  const cols = ['#8b4a32', '#3f6a8a', '#5d7a4a', '#9a8a6a', '#7a3f3f', '#4a5a7a', '#a0703a'];
+  for (let x = -146; x < 84; x += 19) {
+    const n = 1 + Math.floor(rnd() * 2.6);
+    for (let k = 0; k < n; k++) H.el('rect', { x, y: -31 - 13 * (k + 1), width: 18, height: 12.5, fill: cols[Math.floor(rnd() * cols.length)], opacity: .95 }, g);
+  }
+  H.el('rect', { x: 96, y: -84, width: 56, height: 56, fill: '#d6dbe0' }, g);
+  H.el('rect', { x: 88, y: -88, width: 72, height: 8, fill: '#c3c9cf' }, g);
+  for (let x = 100; x < 150; x += 9) H.el('rect', { x, y: -78, width: 5, height: 5, fill: '#2a3440' }, g);
+  for (let x = 100; x < 150; x += 9) H.el('rect', { x, y: -62, width: 5, height: 4, fill: '#3a4450' }, g);
+  H.el('rect', { x: 128, y: -110, width: 18, height: 24, fill: '#b5443a' }, g);
+  H.el('rect', { x: 128, y: -114, width: 18, height: 5, fill: '#1e2328' }, g);
+  H.el('line', { x1: 112, y1: -88, x2: 112, y2: -116, stroke: '#a9b0b8', 'stroke-width': 2 }, g);
+  H.el('line', { x1: -150, y1: -32, x2: -150, y2: -66, stroke: '#a9b0b8', 'stroke-width': 2 }, g);
+  return g;
+}
+
+// ---------- yorug'lik yo'li (kesim): ko'zdan orqaga integrallash ----------
+const GY = 440;
+function rayPath(EX, EY, s0, HL, hmin) {
+  const he = GY - EY, A = s0 * s0 / (2 * HL * (Math.exp(-hmin / HL) - Math.exp(-he / HL)));
+  let x = EX, y = EY, s = s0; const pts = [[x, y]];
+  for (let i = 0; i < 3000 && x > -20 && y > -20; i++) { y += s; s -= A * Math.exp(-(GY - y) / HL); x -= 1; if (i % 4 === 3) pts.push([x, y]); }
+  pts.push([x, y]);
+  return pts.reverse();       // osmondan ko'zga
+}
+
+return {
+  init(H) {
+    const ov = H.$('ov'), ov2 = H.$('ov2');
+    const dg0 = H.el('defs', {}, ov);
+    skinDefs(H, dg0, 'R');
+
+    // ===== 2: qo'l + telefon =====
+    { el.ph = H.el('g', { opacity: 0 }, ov);
+      const hb = [handBack(H, el.ph, 'R'), handBack(H, el.ph, 'R')];
+      hb[0].setAttribute('transform', `translate(${PHW} 0)`);
+      hb[1].setAttribute('transform', `translate(${-PHW} 6) scale(-1 1)`);
+      // korpus (ekran teshigi bilan)
+      const hole = `M${-SCW + 30},${-SCH} H${SCW - 30} A30,30 0 0 1 ${SCW},${-SCH + 30} V${SCH - 30} A30,30 0 0 1 ${SCW - 30},${SCH} H${-SCW + 30} A30,30 0 0 1 ${-SCW},${SCH - 30} V${-SCH + 30} A30,30 0 0 1 ${-SCW + 30},${-SCH} Z`;
+      const body = `M${-PHW + 48},${-PHH} H${PHW - 48} A48,48 0 0 1 ${PHW},${-PHH + 48} V${PHH - 48} A48,48 0 0 1 ${PHW - 48},${PHH} H${-PHW + 48} A48,48 0 0 1 ${-PHW},${PHH - 48} V${-PHH + 48} A48,48 0 0 1 ${-PHW + 48},${-PHH} Z`;
+      H.el('path', { d: body + ' ' + hole, 'fill-rule': 'evenodd', fill: '#101216', stroke: '#6d737c', 'stroke-width': 4 }, el.ph);
+      H.el('path', { d: body, fill: 'none', stroke: '#2a2e35', 'stroke-width': 1.5, transform: 'scale(0.988)' }, el.ph);
+      H.el('circle', { cx: -PHW + 11 + 0, cy: 0, r: 5, fill: '#1d2230', stroke: '#30384a', 'stroke-width': 1.5 }, el.ph);   // old kamera
+      H.el('rect', { x: -60, y: -PHH - 5, width: 70, height: 6, rx: 3, fill: '#4a4f57' }, el.ph);                   // tugmalar
+      H.el('rect', { x: 40, y: -PHH - 5, width: 44, height: 6, rx: 3, fill: '#4a4f57' }, el.ph);
+      // kamera ilovasi interfeysi
+      const ui = H.el('g', {}, el.ph);
+      for (const k of [1, 2]) {
+        const x = -SCW + 2 * SCW * k / 3, y = -SCH + 2 * SCH * k / 3;
+        H.el('line', { x1: x, y1: -SCH, x2: x, y2: SCH, stroke: '#fff', 'stroke-width': 1.5, opacity: .28 }, ui);
+        H.el('line', { x1: -SCW, y1: y, x2: SCW, y2: y, stroke: '#fff', 'stroke-width': 1.5, opacity: .28 }, ui);
+      }
+      H.el('rect', { x: SCW - 84, y: -SCH, width: 84, height: 2 * SCH, fill: '#000', opacity: .38 }, ui);
+      el.shut = H.el('g', { transform: `translate(${SCW - 42} 0)` }, ui);
+      H.el('circle', { r: 31, fill: 'none', stroke: '#fff', 'stroke-width': 4 }, el.shut);
+      el.shutIn = H.el('circle', { r: 24, fill: '#fff' }, el.shut);
+      H.el('rect', { x: SCW - 62, y: SCH - 64, width: 40, height: 40, rx: 8, fill: '#3a4a5a', stroke: '#fff', 'stroke-width': 2 }, ui);
+      el.thumb = H.el('rect', { x: SCW - 60, y: SCH - 62, width: 36, height: 36, rx: 6, fill: '#8fb5dc', opacity: 0 }, ui);
+      H.el('circle', { cx: SCW - 42, cy: -SCH + 40, r: 12, fill: 'none', stroke: '#fff', 'stroke-width': 2.5 }, ui);
+      H.el('path', { d: `M${SCW - 46},${-SCH + 34} l6,0 l-4,7 l6,0 l-9,10 l3,-7 l-5,0 z`, fill: '#ffc83d' }, ui);
+      // fokus ramkasi
+      el.focus = H.el('g', { opacity: 0 }, ui);
+      const fq = 64;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]])
+        H.el('path', { d: `M${sx * fq},${sy * (fq - 22)} V${sy * fq} H${sx * (fq - 22)}`, fill: 'none', stroke: '#ffc83d', 'stroke-width': 4, 'stroke-linecap': 'round' }, el.focus);
+      // zatvor belgisi (diafragma)
+      el.ap = H.el('g', { opacity: 0 }, ui);
+      H.el('circle', { r: 50, fill: '#11151c', opacity: .85 }, el.ap);
+      H.el('circle', { r: 38, fill: 'none', stroke: '#fff', 'stroke-width': 4 }, el.ap);
+      for (let i = 0; i < 6; i++) { const a = i * 60 * DEG, b = a + 60 * DEG;
+        H.el('line', { x1: 38 * Math.cos(a), y1: 38 * Math.sin(a), x2: 14 * Math.cos(b + 40 * DEG), y2: 14 * Math.sin(b + 40 * DEG), stroke: '#fff', 'stroke-width': 4, 'stroke-linecap': 'round' }, el.ap); }
+      const hf = [handFront(H, el.ph, 'R'), handFront(H, el.ph, 'R')];
+      hf[0].setAttribute('transform', `translate(${PHW} 0)`);
+      hf[1].setAttribute('transform', `translate(${-PHW} 6) scale(-1 1)`);
+    }
+
+    // ===== 5b: yo'lda belgilar =====
+    { el.g5 = H.el('g', { opacity: 0 }, ov);
+      el.ring = H.el('ellipse', { rx: 250, ry: 58, fill: 'none', stroke: '#ffc83d', 'stroke-width': 5, 'stroke-dasharray': '16 10' }, el.g5);
+      el.tSky = H.tag(0, 0, 'osmon aksi', '#9fd2ff', el.g5, 'middle', 30);
+      el.lCar = H.el('line', { stroke: '#fff', 'stroke-width': 3 }, el.g5);
+      el.tCar = H.tag(0, 0, 'mashina', '#fff', el.g5, 'middle', 26);
+      el.lInv = H.el('line', { stroke: '#ffc83d', 'stroke-width': 3 }, el.g5);
+      el.tInv = H.tag(0, 0, 'teskari aksi', '#ffc83d', el.g5, 'middle', 26);
+    }
+
+    // ===== 6: sovuq dengiz, kema va uning osmondagi tasviri =====
+    { el.g6 = H.el('g', { opacity: 0 }, ov);
+      const dg = H.el('defs', {}, el.g6);
+      const fb = H.el('filter', { id: 'shB', x: '-10%', y: '-30%', width: '120%', height: '160%' }, dg); H.el('feGaussianBlur', { stdDeviation: 0.3 }, fb);
+      const fm = H.el('filter', { id: 'shM', x: '-10%', y: '-30%', width: '120%', height: '160%' }, dg);
+      H.el('feGaussianBlur', { stdDeviation: 1.6 }, fm);
+      H.el('feColorMatrix', { type: 'matrix', values: '0.55 0 0 0 0.33  0 0.55 0 0 0.36  0 0 0.55 0 0.40  0 0 0 1 0' }, fm);
+      const cp = H.el('clipPath', { id: 'shClip' }, dg); H.el('rect', { x: -300, y: -200, width: 600, height: 198 }, cp);
+      el.shipR = H.el('g', { transform: `translate(400 ${SEA_HOR + 3})` }, el.g6);
+      const sr = H.el('g', { filter: 'url(#shB)', 'clip-path': 'url(#shClip)' }, el.shipR);
+      drawShip(H, sr);
+      el.shipM = H.el('g', { opacity: 0 }, el.g6);
+      const sm = H.el('g', { filter: 'url(#shM)' }, el.shipM);
+      H.el('rect', { x: -230, y: -3, width: 460, height: 7, rx: 3, fill: '#b8c6d4', opacity: .55 }, sm);
+      drawShip(H, sm);
+      el.tShip = H.tag(400, SEA_HOR + 62, 'haqiqiy kema', '#fff', el.g6, 'middle', 24);
+      el.tMir = H.tag(0, 0, 'osmonda «suzayotgan» kema', '#ffc83d', el.g6, 'middle', 26);
+      el.lMir = H.el('path', { d: '', fill: 'none', stroke: '#ffc83d', 'stroke-width': 3, 'stroke-dasharray': '8 7' }, el.g6);
+      // savol belgisi
+      el.q = H.el('g', { opacity: 0 }, el.g6);
+      const qg = H.el('radialGradient', { id: 'qG', cx: 0.38, cy: 0.32, r: 0.75 }, dg);
+      [[0, '#ffb15a'], [0.6, '#e2662a'], [1, '#8a2f12']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, qg));
+      H.el('circle', { r: 98, fill: 'url(#qG)', stroke: '#ffd9a8', 'stroke-width': 3 }, el.q);
+      H.el('ellipse', { cx: -32, cy: -44, rx: 30, ry: 18, fill: '#fff', opacity: .25 }, el.q);
+      text(H, el.q, 0, 52, '?', { 'text-anchor': 'middle', 'font-size': 150, fill: '#ffe07a', stroke: '#6a2408', 'stroke-width': 6, style: 'paint-order:stroke' });
+    }
+
+    // ===== 3: issiq asfalt ustidagi havo qatlamlari =====
+    { const s = H.$('sHeat'), dg = H.el('defs', {}, s);
+      const bands = [['#d9472a', .60], ['#c4683a', .44], ['#8a6c86', .34], ['#4c79b8', .38], ['#3a6fc8', .46]];
+      const BT = 60, BH = 76;
+      el.bands = bands.map(([c, o], k) => H.el('rect', { x: 0, y: GY - (k + 1) * BH, width: 960, height: BH, fill: c, opacity: 0, 'data-o': o }, s));
+      for (let k = 1; k < 5; k++) H.el('line', { x1: 0, y1: GY - k * BH, x2: 960, y2: GY - k * BH, stroke: '#fff', 'stroke-opacity': .16, 'stroke-width': 2 }, s);
+      const ag = H.el('linearGradient', { id: 'asf', x1: 0, y1: 0, x2: 0, y2: 1 }, dg);
+      [[0, '#3a3b40'], [1, '#1c1d21']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, ag));
+      H.el('rect', { x: 0, y: GY, width: 960, height: 80, fill: 'url(#asf)' }, s);
+      SEED = 3;
+      for (let i = 0; i < 150; i++) H.el('circle', { cx: rnd() * 960, cy: GY + 6 + rnd() * 70, r: 1 + rnd() * 2.2, fill: rnd() < 0.5 ? '#5a5b60' : '#141518', opacity: .8 }, s);
+      el.asfGlow = H.el('rect', { x: 0, y: GY - 4, width: 960, height: 8, fill: '#ff6a3a', opacity: 0 }, s);
+      el.tAsf = H.tag(24, 492, 'Asfalt ≈ 60 °C', '#ffb38a', s, 'start', 26);
+      const temps = ['50 °C — issiq, siyrak', '42 °C', '37 °C', '34 °C', '32 °C — salqin, zich'];
+      el.temps = temps.map((x, k) => H.tag(22, GY - k * BH - 28, x, k === 0 ? '#ffb38a' : k === 4 ? '#8fd0ff' : '#fff', s, 'start', 24));
+      const cnt = [6, 11, 17, 25, 35], amp = [9, 7, 5, 4, 3];
+      el.mol = [];
+      SEED = 5;
+      cnt.forEach((n, k) => { for (let i = 0; i < n; i++) {
+        const x = 330 + (i + rnd() * 0.8) / n * 610, y = GY - k * BH - 10 - rnd() * (BH - 20);
+        el.mol.push({ e: H.el('circle', { cx: x, cy: y, r: 6, fill: '#fff', opacity: 0, stroke: '#0b1630', 'stroke-width': 1.5 }, s), x, y, a: amp[k], ph: rnd() * 6.28, w: 2 + k * 0.1 + rnd(), k }); } });
+      text(H, s, 24, 38, 'Asfalt ustidagi havo (kesim)', { 'font-size': 22, fill: '#9fb0cc', 'font-weight': 400 });
+      el.arrH = H.el('g', { opacity: 0 }, s);
+      // poyga: pastda (siyrak) nur tezroq
+      el.race = [0, 1].map(i => { const g = H.el('g', { opacity: 0 }, s), y = i === 0 ? GY - 40 : GY - 4 * BH - 36;
+        const lg = H.el('linearGradient', { id: 'tr' + i, x1: 0, y1: 0, x2: 1, y2: 0 }, dg);
+        [[0, 'rgba(255,226,122,0)'], [1, 'rgba(255,226,122,.95)']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, lg));
+        const tr = H.el('rect', { x: -130, y: y - 5, width: 130, height: 10, rx: 5, fill: 'url(#tr' + i + ')' }, g);
+        const c = H.el('circle', { cx: 0, cy: y, r: 11, fill: '#fff3b8', stroke: '#ffc83d', 'stroke-width': 3 }, g);
+        return { g, tr, c, y }; });
+      el.tFast = H.tag(0, 0, 'nur — tezroq', '#ffe27a', s, 'end', 24);
+      el.tSlow = H.tag(0, 0, 'nur — sekinroq', '#ffe27a', s, 'end', 24);
+      el.noteH = text(H, s, 940, 506, '* tezlik farqi juda kichik — bo‘rttirilgan', { 'text-anchor': 'end', fill: '#9fb0cc', 'font-size': 18, 'font-weight': 400, opacity: 0 });
+    }
+
+    // ===== 4–5: nur egiladi (kesim) =====
+    { const s = H.$('sBend'), dg = H.el('defs', {}, s);
+      const sky = H.el('linearGradient', { id: 'bSky', x1: 0, y1: 0, x2: 0, y2: 1 }, dg);
+      [[0, '#1d3d70'], [1, '#5a86bd']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, sky));
+      H.el('rect', { x: 0, y: 0, width: 960, height: GY, fill: 'url(#bSky)' }, s);
+      for (const [cx, cy, rx, ry] of [[70, 54, 56, 20], [120, 40, 46, 24], [168, 56, 50, 18], [330, 34, 40, 14], [362, 26, 30, 14]]) H.el('ellipse', { cx, cy, rx, ry, fill: '#eef4fb', opacity: .85 }, s);
+      const hot = H.el('linearGradient', { id: 'bHot', x1: 0, y1: 0, x2: 0, y2: 1 }, dg);
+      [[0, 'rgba(255,110,50,0)'], [0.55, 'rgba(255,110,50,.22)'], [1, 'rgba(255,90,40,.62)']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, hot));
+      H.el('rect', { x: 0, y: GY - 150, width: 960, height: 150, fill: 'url(#bHot)' }, s);
+      SEED = 9;
+      for (let i = 0; i < 150; i++) { const h = 430 * Math.sqrt(rnd()), x = rnd() * 960;
+        H.el('circle', { cx: x, cy: GY - 6 - h, r: 3.2, fill: '#fff', opacity: .30 }, s); }
+      const ag = H.el('linearGradient', { id: 'asf2', x1: 0, y1: 0, x2: 0, y2: 1 }, dg);
+      [[0, '#3a3b40'], [1, '#1c1d21']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, ag));
+      H.el('rect', { x: 0, y: GY, width: 960, height: 80, fill: 'url(#asf2)' }, s);
+      el.tCold = H.tag(560, 72, 'salqin · zich havo', '#8fd0ff', s, 'middle', 24);
+      el.tHotL = H.tag(705, GY - 16, 'issiq · siyrak havo', '#ffb38a', s, 'middle', 22);
+      // odam (o'ngda, chapga qaragan)
+      const PX = 850, PH = 290;
+      const pg = H.el('g', { transform: `translate(${2 * PX} 0) scale(-1 1)` });
+      H.el('ellipse', { cx: PX - 6, cy: GY + 2, rx: 44, ry: 6, fill: '#000', opacity: .45 }, s);
+      const P = personSide(H, pg, PX, GY, PH, 'p');
+      const E = [2 * PX - P.eye[0], P.eye[1]];
+      el.E = E;
+      const s0 = 0.8;
+      el.s0 = s0;
+      const pts = rayPath(E[0], E[1], s0, 80, 15);
+      el.rayPts = pts;
+      el.rayGlow = H.line(pts, '#ffe27a', 18, s, { opacity: .22 });
+      el.ray = H.line(pts, '#ffe27a', 7, s);
+      // yo'nalish o'qchalari
+      let L = 0; const cum = [0]; for (let i = 1; i < pts.length; i++) { L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); cum.push(L); }
+      el.arrs = [0.22, 0.52, 0.80].map(fr => { const tl = fr * L; let i = cum.findIndex(c => c >= tl); i = Math.max(1, i);
+        const a = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]) / DEG;
+        const g = H.el('path', { d: 'M-14,-11 L12,0 L-14,11 Z', fill: '#ffe27a', stroke: '#0b1630', 'stroke-width': 2, opacity: 0, transform: `translate(${f1(pts[i][0])} ${f1(pts[i][1])}) rotate(${a.toFixed(1)})` }, s);
+        return { g, fr }; });
+      el.tSkyR = H.tag(18, pts[0][1] - 26, 'osmondan nur', '#ffe27a', s, 'start', 22);
+      s.appendChild(pg);
+      el.tEye = H.tag(E[0] - 4, E[1] - 70, 'ko‘z', '#fff', s, 'middle', 22);
+      el.noteB = text(H, s, 20, 506, '* sxematik: burchak bo‘rttirilgan', { fill: '#9fb0cc', 'font-size': 18, 'font-weight': 400, opacity: 0 });
+      // 5: miya to'g'ri chiziq deb biladi
+      el.xd = E[0] - (GY - E[1]) / s0;
+      const pdg = H.el('linearGradient', { id: 'pud', x1: 0, y1: 0, x2: 0, y2: 1 }, dg);
+      [[0, '#cfe6ff'], [1, '#6fa6e0']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, pdg));
+      el.pud = H.el('g', { opacity: 0 }, s);
+      H.el('ellipse', { cx: el.xd, cy: GY + 1, rx: 92, ry: 10, fill: 'url(#pud)' }, el.pud);
+      el.glints = [0, 1, 2].map(i => H.el('ellipse', { cx: el.xd, cy: GY + 1, rx: 14, ry: 2.5, fill: '#fff', opacity: .9 }, el.pud));
+      el.dash = H.el('line', { x1: E[0], y1: E[1], x2: E[0], y2: E[1], stroke: '#9fd2ff', 'stroke-width': 5, 'stroke-dasharray': '14 10', opacity: 0 }, s);
+      el.tBrain = H.tag(560, 252, 'miya: «nur yerdan keldi»', '#9fd2ff', s, 'end', 24);
+      el.tPud = H.tag(el.xd, 500, '«suv» = osmon aksi', '#9fd2ff', s, 'middle', 24);
+    }
+
+    // ===== 7: izoh + yuborish belgilari (d2n) =====
+    { el.cm = H.el('g', { opacity: 0 }, ov2);
+      el.bub = H.el('g', {}, el.cm);
+      H.el('path', { d: 'M230,330 h260 a46,46 0 0 1 46,46 v140 a46,46 0 0 1 -46,46 h-150 l-66,56 l10,-56 h-54 a46,46 0 0 1 -46,-46 v-140 a46,46 0 0 1 46,-46 z', fill: '#ffffff', stroke: '#0b1630', 'stroke-width': 4 }, el.bub);
+      el.dots = [300, 360, 420].map(x => H.el('circle', { cx: x, cy: 446, r: 18, fill: '#2a5bd7' }, el.bub));
+      el.send = H.el('g', {}, el.cm);
+      H.el('circle', { cx: 0, cy: 0, r: 120, fill: '#1b3f7a', stroke: '#8fd0ff', 'stroke-width': 4 }, el.send);
+      H.el('path', { d: 'M-62,-6 L66,-58 L28,64 L6,14 Z', fill: '#ffffff', stroke: '#0b1630', 'stroke-width': 4, 'stroke-linejoin': 'round' }, el.send);
+      H.el('path', { d: 'M6,14 L66,-58', stroke: '#0b1630', 'stroke-width': 4 }, el.send);
+      el.trail = [0, 1, 2].map(i => H.el('line', { x1: -80 - i * 4, y1: 30 + i * 22, x2: -40 - i * 4, y2: 14 + i * 22, stroke: '#8fd0ff', 'stroke-width': 6, 'stroke-linecap': 'round' }, el.send));
+    }
+    el.big = ['big0', 'big1', 'big2', 'big3', 'big4', 'big5', 'big6'].map(i => H.$(i));
+  },
+
+  frame(t, H) {
+    const sea = t >= B[5];
+    // ---- kamera
+    let pos, cam;
+    if (!sea) {
+      const z = camZ(t);
+      pos = [CAMX, EYE_H + 0.004 * Math.sin(t * 7.3), z];
+      cam = H.look(pos, [CAMX, pos[1] + Math.tan(PITCH) * 100, z + 100]);
+      H.set('uCarZ', z + carD(t)); H.set('uBend', 0.0113); H.set('uExposure', 1.0); H.set('uScene', 0);
+    } else {
+      pos = [0, 3.0, 2 * t];
+      cam = H.look(pos, [0, 3.0 + Math.tan(SEA_PITCH) * 100, 2 * t + 100]);
+      H.set('uExposure', 1.0); H.set('uScene', 1); H.set('uCarZ', -1e4);
+    }
+    H.set('uCamPos', pos); H.set('uCam', cam.m); H.set('uTanHalf', TANH);
+    H.set('uFade', clamp01(Math.abs(t - B[5]) / 0.14));
+    const proj = P => { const v = P.map((x, i) => x - pos[i]), x = v[0] * cam.right[0] + v[1] * cam.right[1] + v[2] * cam.right[2],
+      y = v[0] * cam.up[0] + v[1] * cam.up[1] + v[2] * cam.up[2], zz = v[0] * cam.fwd[0] + v[1] * cam.fwd[1] + v[2] * cam.fwd[2];
+      return [540 + x / zz / TANH * 520, 520 - y / zz / TANH * 520]; };
+
+    // ---- katta yozuvlar (bir vaqtda faqat bittasi)
+    [[0, -1, B[1]], [1, B[1], B[2]], [2, B[2], B[3]], [3, B[3], B[4]], [4, B[4], B[5]], [5, B[5], B[7] + 1], [6, 40.1, B[7] + 1]].forEach(([i, a, b]) => {
+      const e = el.big[i], v = (a < 0 ? 1 : ramp(a, a + 0.22, t)) * (1 - ramp(b - 0.22, b, t));
+      const x = clamp01((t - a - 0.03) / 0.35), back = 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
+      e.style.opacity = v.toFixed(3);
+      e.style.transform = 'scale(' + (a < 0 ? 1 : (0.82 + 0.18 * back)).toFixed(3) + ')';
+    });
+
+    // ---- 2: telefon
+    { const kin = 1 - Math.pow(1 - ramp(B[1], B[1] + 0.55, t), 3), kout = ramp(6.35, 6.76, t);
+      const vis = t > B[1] && t < B[2];
+      const px = 540 + 5 * Math.sin(t * 1.7), py = 548 + 640 * (1 - kin) + 640 * kout * kout + 3 * Math.sin(t * 2.3);
+      H.sop(el.ph, vis ? 1 : 0);
+      el.ph.setAttribute('transform', `translate(${f1(px)} ${f1(py)})`);
+      if (vis) {
+        H.set('uPhZ', PH_Z);
+        H.set('uPhA', [(px - SCW - 2) / 1080, 1 - (py + SCH + 2) / 1040]); H.set('uPhB', [(px + SCW + 2) / 1080, 1 - (py - SCH - 2) / 1040]);
+        H.set('uPhTgt', PH_TGT);
+      } else H.set('uPhZ', 0);
+      const fl = ramp(5.14, 5.2, t) * (1 - ramp(5.24, 5.7, t));
+      H.set('uFlash', 0.92 * fl);
+      const kf = ramp(3.7, 3.9, t) * (1 - ramp(5.0, 5.15, t));
+      H.sop(el.focus, kf); el.focus.setAttribute('transform', `scale(${(1.25 - 0.25 * ramp(3.7, 4.1, t)).toFixed(3)})`);
+      H.sop(el.ap, ramp(5.12, 5.2, t) * (1 - ramp(5.75, 5.95, t)));
+      el.ap.setAttribute('transform', `rotate(${(30 * ramp(5.12, 5.6, t)).toFixed(1)})`);
+      el.shutIn.setAttribute('r', (24 - 5 * ramp(5.08, 5.15, t) * (1 - ramp(5.25, 5.4, t))).toFixed(1));
+      H.sop(el.thumb, ramp(5.6, 5.8, t));
+    }
+
+    // ---- kartalar / xiralik
+    H.op('dim', 0.5 * win(B[2], 26.7, t, 0.3, 0.35) + 0.5 * ramp(B[6], B[6] + 0.4, t));
+    H.op('cHeat', win(B[2], B[3], t, 0.3, 0.3));
+    H.op('cBend', win(B[3], 26.7, t, 0.3, 0.35));
+
+    // ---- 3: qatlamlar
+    if (t > B[2] - 0.1 && t < B[3] + 0.1) {
+      el.bands.forEach((b, k) => H.sop(b, +b.getAttribute('data-o') * ramp(7.1 + 0.2 * (4 - k), 7.5 + 0.2 * (4 - k), t)));
+      H.sop(el.tAsf, ramp(7.3, 7.6, t)); H.sop(el.asfGlow, 0.5 * ramp(7.4, 8.0, t) * (0.8 + 0.2 * Math.sin(t * 3)));
+      el.temps.forEach((g, k) => H.sop(g, ramp(8.2 + 0.25 * k, 8.5 + 0.25 * k, t)));
+      const km = ramp(9.4, 10.2, t);
+      for (const m of el.mol) {
+        m.e.setAttribute('cx', f1(m.x + m.a * Math.sin(t * m.w * 2.2 + m.ph)));
+        m.e.setAttribute('cy', f1(m.y + m.a * 0.8 * Math.cos(t * m.w * 1.9 + m.ph * 1.3)));
+        H.sop(m.e, 0.85 * km);
+      }
+      const t0 = 11.5;
+      el.race.forEach((r, i) => { const v = i === 0 ? 340 : 230, x = Math.min(935, 340 + v * Math.max(0, t - t0));
+        r.g.setAttribute('transform', `translate(${f1(x)} 0)`); H.sop(r.g, ramp(t0 - 0.2, t0 + 0.1, t)); });
+      const xb = Math.min(935, 340 + 340 * Math.max(0, t - t0)), xt = Math.min(935, 340 + 230 * Math.max(0, t - t0));
+      el.tFast.setAttribute('transform', `translate(${f1(xb - 20 - 935)} ${GY - 40 - 52 + 492 - 492})`);
+      el.tFast.setAttribute('transform', `translate(${f1(xb - 20)} ${GY - 76})`);
+      el.tSlow.setAttribute('transform', `translate(${f1(xt - 20)} ${GY - 4 * 76 - 36 + 52})`);
+      H.sop(el.tFast, ramp(12.2, 12.5, t)); H.sop(el.tSlow, ramp(12.5, 12.8, t)); el.noteH.setAttribute('opacity', ramp(12.6, 13.0, t).toFixed(3));
+    }
+
+    // ---- 4–5: egilgan nur va miya aldovi
+    if (t > B[3] - 0.1 && t < 26.8) {
+      const kr = ramp(15.0, 21.2, t);
+      H.draw(el.ray, kr); H.draw(el.rayGlow, kr);
+      el.arrs.forEach(a => H.sop(a.g, ramp(a.fr - 0.02, a.fr + 0.03, kr)));
+      H.sop(el.tSkyR, ramp(15.0, 15.4, t)); H.sop(el.tCold, ramp(15.4, 15.8, t)); H.sop(el.tHotL, ramp(15.8, 16.2, t));
+      H.sop(el.tEye, ramp(21.0, 21.4, t)); el.noteB.setAttribute('opacity', ramp(16.5, 17.0, t).toFixed(3));
+      const kd = ramp(23.3, 24.7, t), E = el.E;
+      el.dash.setAttribute('x2', f1(E[0] + (el.xd - E[0]) * kd)); el.dash.setAttribute('y2', f1(E[1] + (GY - E[1]) * kd));
+      H.sop(el.dash, kd > 0 ? 1 : 0);
+      H.sop(el.tBrain, ramp(24.0, 24.4, t));
+      H.sop(el.pud, ramp(24.6, 25.1, t)); H.sop(el.tPud, ramp(25.2, 25.6, t));
+      el.glints.forEach((g, i) => { g.setAttribute('cx', f1(el.xd - 60 + ((t * 38 + i * 45) % 120))); g.setAttribute('opacity', (0.5 + 0.45 * Math.sin(t * 5 + i * 2)).toFixed(2)); });
+    }
+
+    // ---- 5b: yo'lda — osmon aksi va teskari mashina
+    { const v = win(26.7, B[5], t, 0.4, 0.2); H.sop(el.g5, v);
+      if (v > 0 && !sea) {
+        const z = camZ(t), cz = z + carD(t);
+        const carTop = proj([1.75, 1.45, cz]), carBase = proj([1.75, 0, cz]), inv = proj([1.75, -0.9, cz]);
+        const rc = proj([0, 0, z + 200]);
+        const ry = 0.0113 / TANH * 520;
+        el.ring.setAttribute('cx', f1(rc[0] + 20)); el.ring.setAttribute('cy', f1(HOR_Y + ry * 0.48)); el.ring.setAttribute('ry', f1(ry * 0.62));
+        el.tSky.setAttribute('transform', `translate(${f1(rc[0] + 20)} ${f1(HOR_Y + ry * 1.1 + 52)})`);
+        H.sop(el.tSky, ramp(27.2, 27.6, t));
+        el.lCar.setAttribute('x1', f1(carTop[0])); el.lCar.setAttribute('y1', f1(carTop[1] - 6)); el.lCar.setAttribute('x2', f1(carTop[0])); el.lCar.setAttribute('y2', f1(carTop[1] - 70));
+        el.tCar.setAttribute('transform', `translate(${f1(carTop[0])} ${f1(carTop[1] - 82)})`);
+        const kc = ramp(28.6, 29.0, t); H.sop(el.lCar, kc); H.sop(el.tCar, kc);
+        const ix = carBase[0] - 250, iy = HOR_Y + ry * 1.1 + 100;
+        el.lInv.setAttribute('x1', f1(inv[0] - 30)); el.lInv.setAttribute('y1', f1(inv[1])); el.lInv.setAttribute('x2', f1(ix + 60)); el.lInv.setAttribute('y2', f1(iy - 30));
+        el.tInv.setAttribute('transform', `translate(${f1(ix)} ${f1(iy)})`);
+        const ki = ramp(29.4, 29.8, t); H.sop(el.lInv, ki); H.sop(el.tInv, ki);
+      }
+    }
+
+    // ---- 6: dengiz
+    { const v = ramp(B[5], B[5] + 0.3, t); H.sop(el.g6, v * (1 - 0.7 * ramp(B[6], B[6] + 0.4, t)));
+      if (sea) {
+        const km = ramp(34.3, 36.2, t), lift = 150 * km;
+        el.shipM.setAttribute('transform', `translate(400 ${f1(SEA_HOR + 3 - 8 - lift)}) scale(1 ${(1 + 0.18 * km).toFixed(3)})`);
+        H.sop(el.shipM, 0.9 * ramp(34.3, 35.2, t));
+        H.sop(el.tShip, ramp(33.2, 33.6, t) * (1 - ramp(B[6], B[6] + 0.3, t)));
+        const my = SEA_HOR - 8 - lift - 140;
+        el.tMir.setAttribute('transform', `translate(400 ${f1(my)})`);
+        H.sop(el.tMir, ramp(36.0, 36.4, t) * (1 - ramp(B[6], B[6] + 0.3, t)));
+        H.sop(el.lMir, 0);
+        const kq = ramp(39.2, 39.5, t) * (1 - ramp(B[6], B[6] + 0.3, t));
+        const sq = 0.6 + 0.4 * (1 - Math.pow(1 - ramp(39.2, 39.6, t), 3));
+        el.q.setAttribute('transform', `translate(840 ${f1(360 + 6 * Math.sin(t * 2.4))}) scale(${sq.toFixed(3)})`);
+        H.sop(el.q, kq);
+      }
+    }
+
+    // ---- 7: izoh / yuborish
+    { const v = ramp(B[6], B[6] + 0.3, t); H.sop(el.cm, v);
+      const sc = 0.7 + 0.3 * (1 - Math.pow(1 - ramp(B[6], B[6] + 0.45, t), 3));
+      el.bub.setAttribute('transform', `translate(360 450) scale(${sc.toFixed(3)}) translate(-360 -450)`);
+      el.dots.forEach((d, i) => d.setAttribute('cy', (446 - 14 * Math.max(0, Math.sin(t * 6 - i * 0.9))).toFixed(1)));
+      const ks = ramp(B[6] + 0.25, B[6] + 0.6, t);
+      el.send.setAttribute('transform', `translate(${(760 + 14 * Math.sin(t * 5) * ks).toFixed(1)} ${(450 - 10 * Math.abs(Math.sin(t * 5)) * ks).toFixed(1)}) scale(${(0.6 + 0.4 * (1 - Math.pow(1 - ks, 3))).toFixed(3)})`);
+      H.sop(el.send, ks);
+      el.trail.forEach((l, i) => H.sop(l, ks * (0.4 + 0.6 * Math.abs(Math.sin(t * 6 + i)))));
+    }
+  },
+};
+
+})());
+</script>
+<script>
+// ===== FIZIKA HAYOTDA — umumiy yadro: shablon, matn animatsiyasi, oxirgi karta, eksport =====
+(() => {
+  'use strict';
+  const D = window.DAY;
+  const qs = new URLSearchParams(location.search);
+  const DUR = D.DUR;
+  const fixedT = qs.has('t') ? Math.max(0, Math.min(DUR - 0.001, parseFloat(qs.get('t')) || 0)) : null;
+  const Q = parseFloat(qs.get('q')) || 0;
+  const VIS_H = 1040;
+  let time = fixedT ?? 0;
+  const $ = id => document.getElementById(id);
+  const box = $('box'), stage = $('stage'), canvas = $('gl'), errEl = $('err');
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true });
+  const fail = msg => { errEl.textContent = msg; console.error(msg); };
+  if (!gl) { fail('WebGL2 ishlamayapti.'); return; }
+  const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { fail('Shader xatosi:\n' + gl.getShaderInfoLog(s)); return null; } return s; };
+  const vs = mk(gl.VERTEX_SHADER, '#version 300 es\nin vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }');
+  const fs = mk(gl.FRAGMENT_SHADER, $('fs').textContent);
+  if (!vs || !fs) return;
+  const prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { fail('Link xatosi:\n' + gl.getProgramInfoLog(prog)); return; }
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(prog, i); U[info.name] = gl.getUniformLocation(prog, info.name); }
+  const set = (name, v) => { const l = U[name]; if (!l) return;
+    if (typeof v === 'number') gl.uniform1f(l, v);
+    else if (v.length === 2) gl.uniform2fv(l, v); else if (v.length === 3) gl.uniform3fv(l, v); else if (v.length === 9) gl.uniformMatrix3fv(l, false, v); };
+
+  // yordamchilar (kunlik skriptlar ham ishlatadi)
+  const H = window.FH = {
+    clamp01: x => Math.max(0, Math.min(1, x)),
+    ramp(a, b, t) { const x = Math.max(0, Math.min(1, (t - a) / (b - a))); return x * x * (3 - 2 * x); },
+    win(a, b, t, fi = 0.6, fo = 0.5) { return H.ramp(a, a + fi, t) * (1 - H.ramp(b - fo, b, t)); },
+    op(id, v) { (typeof id === 'string' ? $(id) : id).style.opacity = v.toFixed(3); },
+    sop(e, v) { e.setAttribute('opacity', v.toFixed(3)); },
+    draw(e, k) { e.setAttribute('stroke-dashoffset', (1 - k).toFixed(4)); },
+    $, set, DEG: Math.PI / 180,
+    SV: 'http://www.w3.org/2000/svg',
+    el(tag, at, parent) { const e = document.createElementNS(H.SV, tag); for (const k in at) e.setAttribute(k, at[k]); if (parent) parent.appendChild(e); return e; },
+    line(pts, color, w, parent, extra = {}) { return H.el('polyline', Object.assign({ points: pts.map(p => p.map(v => (+v).toFixed(1)).join(',')).join(' '), fill: 'none', stroke: color,
+      'stroke-width': w, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', pathLength: 1, 'stroke-dasharray': '1 1', 'stroke-dashoffset': 1 }, extra), parent); },
+    // matnli belgi (fon bilan); anchor: start|middle|end
+    tag(x, y, txt, color, parent, anchor = 'start', size = 28) {
+      const g = H.el('g', { opacity: 0 }, parent);
+      const r = H.el('rect', { rx: 12, class: 'tagbg' }, g);
+      const t = H.el('text', { x, y, 'font-size': size, 'font-weight': 700, fill: color, 'text-anchor': anchor }, g); t.textContent = txt;
+      requestAnimationFrame(() => {}); const b = t.getBBox();
+      r.setAttribute('x', b.x - 14); r.setAttribute('y', b.y - 8); r.setAttribute('width', b.width + 28); r.setAttribute('height', b.height + 16);
+      return g;
+    },
+    look(pos, tgt) {
+      const nz = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+      const cr = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const f = nz(tgt.map((v, i) => v - pos[i])), r = nz(cr(f, [0, 1, 0])), u = cr(r, f);
+      return { right: r, up: u, fwd: f, m: [...r, ...u, ...f] };
+    },
+  };
+
+  const CAPS = D.caps.map((r, i) => ({ el: $('cap' + i), a: r[0], b: r[1] }));
+  function drawCommon(t) {
+    CAPS.forEach((c, k) => {
+      const i = k === 0 ? 1 : H.clamp01((t - c.a - 0.1) / 0.5), o = H.clamp01((c.b - t) / 0.35);
+      const e = 1 - Math.pow(1 - i, 3);
+      c.el.style.opacity = (e * o).toFixed(3);
+      c.el.style.transform = 'translateY(' + ((1 - e) * 26).toFixed(1) + 'px)';
+    });
+    if ($('hookSub')) H.op('hookSub', H.ramp(D.sub, D.sub + 0.5, t));
+    H.op('ctabg', H.ramp(D.cta, D.cta + 0.6, t));
+    const kc = H.ramp(D.cta + 0.25, D.cta + 0.85, t);
+    H.op('cta', kc); $('cta').style.transform = 'translateY(' + ((1 - kc) * 30).toFixed(1) + 'px)';
+  }
+
+  let paused = fixedT !== null;
+  function layout() {
+    const k = Math.min(innerWidth / 1080, innerHeight / 1920);
+    const w = Math.max(1, Math.floor(1080 * k)), h = Math.max(1, Math.floor(1920 * k));
+    box.style.width = w + 'px'; box.style.height = h + 'px';
+    stage.style.transform = 'scale(' + (w / 1080) + ')';
+    const want = Math.round(w * (devicePixelRatio || 1));
+    const W = Q ? Math.round(1080 * Q) : paused ? Math.max(540, Math.min(1080, want)) : Math.round(Math.max(360, Math.min(540, want)));
+    const Hh = Math.round(W * VIS_H / 1080);
+    if (canvas.width !== W || canvas.height !== Hh) { canvas.width = W; canvas.height = Hh; }
+  }
+  if (D.init) D.init(H);
+  function render() {
+    const t = time;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    set('uRes', [canvas.width, canvas.height]); set('uT', t);
+    D.frame(t, H);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    drawCommon(t);
+  }
+  window.DURATION = DUR;
+  window.setTime = t => { paused = true; layout(); time = Math.max(0, Math.min(DUR - 0.001, +t || 0)); render(); gl.finish(); return true; };
+  let t0 = null;
+  function tick(now) { if (!paused) { if (t0 === null) t0 = now; time = ((now - t0) / 1000) % DUR; render(); } requestAnimationFrame(tick); }
+  addEventListener('resize', () => { layout(); render(); });
+  layout(); render();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body></html>
