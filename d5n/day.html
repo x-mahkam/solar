@@ -102,7 +102,7 @@ precision highp float;
 precision highp int;
 out vec4 fragColor;
 uniform vec2  uRes;
-uniform float uT, uTanHalf, uFade, uTw, uExposure, uScene, uTreeA, uTreeB;
+uniform float uLay, uT, uTanHalf, uFade, uTw, uExposure, uScene, uTreeA, uTreeB;
 uniform vec3  uCamPos;
 uniform mat3  uCam;
 uniform vec3  uP0, uP1, uP2, uP3;     // maxsus yulduzlar: (x, y stage px, o'lcham)
@@ -428,6 +428,23 @@ vec3 eyeScene(vec2 P){
   return col;
 }
 
+// havo qatlamlari (day.js dagi LAY / layY bilan bir xil)
+vec3 airLayers(vec2 P){
+  vec3 c = vec3(0.0);
+  for(int k=0;k<4;k++){
+    float fk = float(k);
+    vec2 L = (k==0) ? vec2(600.0,60.0) : (k==1) ? vec2(775.0,66.0) : (k==2) ? vec2(945.0,60.0) : vec2(1105.0,52.0);
+    float yc = L.x + 26.0*sin(P.x*0.0045 + uT*0.35*(fk+1.0) + fk*1.7);
+    float d = abs(P.y-yc);
+    if(d > L.y+30.0) continue;
+    float band = smoothstep(L.y+24.0, L.y-14.0, d);
+    float n = fbm3(vec2((P.x - uT*45.0*(1.0+0.2*fk))*0.005, P.y*0.018 + fk*7.0));
+    vec3 tint = (mod(fk,2.0) < 0.5) ? vec3(1.0,0.42,0.18) : vec3(0.25,0.55,1.0);
+    c += tint*band*(0.35+0.65*n)*0.13;
+    c += tint*0.05*exp(-pow((d-L.y)/5.0, 2.0));      // chegara
+  }
+  return c;
+}
 vec3 starPt(vec2 P, vec3 p, vec3 c){
   if(p.z <= 0.0) return vec3(0.0);
   vec2 d = P-p.xy; float r2 = dot(d,d), s = p.z;
@@ -444,6 +461,7 @@ void main(){
   if(uScene < 0.5){
     vec3 rd = normalize(uCam*vec3(sp*uTanHalf, 1.0));
     col = sky3d(uCamPos, rd);
+    if(uLay > 0.0 && P.y < 1190.0) col += airLayers(P)*uLay;
   } else if(uScene < 1.5){
     pixA = 2.0*0.6745/uRes.y*1.6;
     col = stationWin(P, sp);
@@ -498,10 +516,67 @@ const TAN1 = Math.tan(40 * DEG), TAN5 = TAN1, TAN6 = TAN1;
 const F1 = dirOf(25, 0), F5 = dirOf(25, 4), F6 = dirOf(25, -14);
 let HERO, JUP, STAR5, HOR, TOP;
 // atmosfera kesimi
-const STAR3 = [540, 300], EYE3 = [540, 1385];
-const CELLS = [];
+const PX3 = 938, PY3 = 1606, PH3 = 590;
+let EYE3 = [880, 1060], STAR3D;
+// havo qatlamlari: [markaz y, yarim qalinlik, +1 sovuq / -1 issiq] — shader.part dagi layY bilan bir xil
+const LAY = [[600, 60, -1], [775, 66, 1], [945, 60, -1], [1105, 52, 1]];
+const layY = (k, x, t) => LAY[k][0] + 26 * Math.sin(x * 0.0045 + t * 0.35 * (k + 1) + k * 1.7);
 // ko'z
 const STAR4 = [900, 360], PUP = [530, 944];
+
+const HEAD_D = 'M330,640 C328,540 318,480 300,440 C258,410 226,350 224,280 C222,170 300,96 405,92 C505,88 556,150 562,215 C564,236 570,246 574,256 C572,264 566,268 567,276 C578,292 600,312 612,326 C614,334 604,338 586,338 C590,344 594,348 593,354 C588,358 584,362 586,364 C592,368 592,374 586,378 C580,384 578,388 580,394 C588,404 588,416 578,426 C562,436 540,438 520,436 L512,470 C510,520 512,580 514,640 Z';
+const HAIR_D = 'M560,196 C556,140 506,96 430,88 C340,80 250,122 224,210 C210,262 214,330 236,384 C250,414 272,436 300,446 C306,420 310,398 318,380 C326,360 332,344 334,330 C330,300 334,270 348,250 C372,222 410,206 452,200 C490,194 528,196 560,196 Z';
+function personSide(H, p, fx, fy, hgt, sfx, HEAD_ROT) {
+  const s = hgt / 2600;
+  const g = H.el('g', { transform: `translate(${fx},${fy}) scale(${s.toFixed(4)}) translate(-420,-2690)` }, p), dg = H.el('defs', {}, g);
+  const grad = (id, stops, at) => { const e = H.el('linearGradient', Object.assign({ id: id + sfx, x1: 0, y1: 0, x2: 1, y2: 1 }, at || {}), dg); stops.forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, e)); };
+  const rg = H.el('radialGradient', { id: 'sk' + sfx, cx: 0.62, cy: 0.38, r: 0.75 }, dg);
+  [[0, '#f0c4a2'], [0.6, '#d9a07c'], [1, '#a8714f']].forEach(([o, c]) => H.el('stop', { offset: o, 'stop-color': c }, rg));
+  grad('sh', [[0, '#3b6fb0'], [1, '#1d3a66']]);
+  grad('hr', [[0, '#5a3a24'], [0.5, '#3a2416'], [1, '#22150c']]);
+  grad('jn', [[0, '#3c4f74'], [1, '#1c2740']], { x2: 0, y2: 1 });
+  const gb = H.el('g', { transform: 'translate(420 0) scale(1.32 1) translate(-420 0)' }, g);
+  // orqadagi oyoq (to'qroq)
+  H.el('path', { d: 'M300,1380 C296,1700 300,2100 318,2600 L410,2600 C404,2200 410,1800 430,1460 Z', fill: '#18223a' }, gb);
+  H.el('path', { d: 'M300,2590 L420,2590 C470,2592 520,2616 534,2660 L536,2690 L296,2690 Z', fill: '#1a1a1e' }, gb);
+  // oldingi oyoq
+  H.el('path', { d: 'M330,1380 L566,1380 C574,1600 560,1900 548,2600 L440,2600 C436,2250 430,1900 420,1640 C400,1600 340,1500 330,1380 Z', fill: 'url(#jn' + sfx + ')' }, gb);
+  H.el('path', { d: 'M500,1700 C510,1900 506,2200 498,2560', fill: 'none', stroke: '#101830', 'stroke-width': 8, opacity: .5 }, gb);
+  H.el('path', { d: 'M432,2580 L560,2580 C620,2584 680,2610 694,2662 L696,2690 L428,2690 Z', fill: '#26262b' }, gb);
+  H.el('path', { d: 'M428,2672 L696,2672 L696,2690 L428,2690 Z', fill: '#e8e8e8' }, gb);
+  // tana (futbolka)
+  H.el('path', { d: 'M318,600 C360,572 500,566 566,612 C612,700 612,860 590,1000 C584,1150 580,1290 572,1400 L292,1400 C284,1250 276,1100 280,950 C276,800 280,680 318,600 Z', fill: 'url(#sh' + sfx + ')' }, gb);
+  H.el('path', { d: 'M292,1360 L572,1360 L574,1410 L290,1410 Z', fill: '#2a2a30' }, gb);   // kamar
+  grad('shd', [[0, 'rgba(0,0,0,.42)'], [0.45, 'rgba(0,0,0,.08)'], [0.8, 'rgba(255,255,255,0)'], [1, 'rgba(255,240,210,.22)']], { x2: 1, y2: 0 });
+  H.el('path', { d: 'M318,600 C360,572 500,566 566,612 C612,700 612,860 590,1000 C584,1150 580,1290 572,1400 L292,1400 C284,1250 276,1100 280,950 C276,800 280,680 318,600 Z', fill: 'url(#shd' + sfx + ')' }, gb);
+  H.el('path', { d: 'M330,1380 L566,1380 C574,1600 560,1900 548,2600 L440,2600 C436,2250 430,1900 420,1640 C400,1600 340,1500 330,1380 Z', fill: 'url(#shd' + sfx + ')' }, gb);
+  H.el('path', { d: 'M330,1400 C420,1440 520,1440 570,1410 L568,1470 C500,1500 400,1490 330,1450 Z', fill: 'rgba(0,0,0,.18)' }, gb);
+  // bosh (d1n)
+  const hd = H.el('g', { transform: `rotate(${HEAD_ROT} 420 600) translate(420 600) scale(1.1) translate(-420 -600)` }, g);
+  H.el('path', { d: HEAD_D, fill: 'url(#sk' + sfx + ')' }, hd);
+  H.el('path', { d: 'M520,436 C500,430 476,420 458,404', fill: 'none', stroke: '#9a6446', 'stroke-width': 4, opacity: .6 }, hd);
+  H.el('path', { d: HAIR_D, fill: 'url(#hr' + sfx + ')', stroke: '#7a5236', 'stroke-width': 3, 'stroke-opacity': .6 }, hd);
+  for (const d of ['M520,130 C470,108 400,104 340,124', 'M480,112 C410,98 330,112 280,160', 'M300,150 C262,190 246,250 252,320'])
+    H.el('path', { d, fill: 'none', stroke: '#7a5236', 'stroke-width': 6, opacity: .55, 'stroke-linecap': 'round' }, hd);
+  H.el('path', { d: 'M356,258 C330,252 314,274 316,302 C318,330 334,348 354,346 C364,336 360,324 368,314 C376,300 378,270 356,258 Z', fill: '#cf9472', stroke: '#9a6446', 'stroke-width': 4 }, hd);
+  H.el('path', { d: 'M546,263 Q556,256 567,262 Q557,268 546,263 Z', fill: '#f4efe9' }, hd);
+  H.el('circle', { cx: 561, cy: 261, r: 5, fill: '#3a2618' }, hd);
+  H.el('path', { d: 'M540,246 Q556,239 573,247', fill: 'none', stroke: '#3a2618', 'stroke-width': 8, 'stroke-linecap': 'round' }, hd);
+  H.el('path', { d: 'M586,329 Q594,334 601,331', fill: 'none', stroke: '#8a5a40', 'stroke-width': 4, 'stroke-linecap': 'round' }, hd);
+  H.el('path', { d: 'M586,364 Q578,366 572,365', fill: 'none', stroke: '#8a5a40', 'stroke-width': 4, 'stroke-linecap': 'round' }, hd);
+  const gb2 = H.el('g', { transform: 'translate(420 0) scale(1.32 1) translate(-420 0)' }, g);
+  // qo'l (yeng + bilak + kaft), tana ustida
+  H.el('path', { d: 'M360,640 C460,610 520,680 512,800 L500,1000 L410,1000 L400,800 C396,720 380,680 360,640 Z', fill: '#2c5a98' }, gb2);
+  H.el('path', { d: 'M412,990 L500,990 C506,1120 510,1250 508,1340 L428,1340 C424,1240 418,1110 412,990 Z', fill: 'url(#sk' + sfx + ')' }, gb2);
+  H.el('path', { d: 'M426,1330 L510,1330 C520,1390 512,1450 478,1470 C446,1474 428,1440 426,1330 Z', fill: '#c98f6a' }, gb2);
+  H.el('path', { d: 'M360,640 C460,610 520,680 512,800 L500,1000 L410,1000 L400,800 C396,720 380,680 360,640 Z', fill: 'url(#shd' + sfx + ')' }, gb2);
+  H.el('path', { d: 'M412,990 L500,990 C506,1120 510,1250 508,1340 L428,1340 C424,1240 418,1110 412,990 Z', fill: 'url(#shd' + sfx + ')', opacity: .7 }, gb2);
+  // ko'z nuqtasi (sahna koordinatasida)
+  const ex = (561 - 420) * 1.1, ey = (262 - 600) * 1.1, c = Math.cos(HEAD_ROT * DEG), sn = Math.sin(HEAD_ROT * DEG);
+  const lx = 420 + ex * c - ey * sn, ly = 600 + ex * sn + ey * c;
+  return { g, eye: [fx + (lx - 420) * s, fy + (ly - 2690) * s], top: fy - 2600 * s };
+}
+
 
 return {
   init(H) {
@@ -511,44 +586,26 @@ return {
     const c1 = camOf(F1), c5 = camOf(F5), c6 = camOf(F6);
     HERO = unproj(c1, TAN1, 700, 560);
     JUP = unproj(c5, TAN5, 250, 640); STAR5 = unproj(c5, TAN5, 430, 430);
-    HOR = unproj(c6, TAN6, 860, 1405); TOP = unproj(c6, TAN6, 430, 345);
+    HOR = unproj(c6, TAN6, 860, 1405); STAR3D = unproj(camOf(dirOf(25, -8.3)), TAN1, 330, 420); TOP = unproj(c6, TAN6, 430, 345);
     el.treeK = HOR[0] / HOR[2];
 
-    // ===== 3: atmosfera kesimi =====
+    // ===== 3: masjid oldida odam yulduzga qaraydi; havo qatlamlari =====
     { const g = H.el('g', { opacity: 0 }, ov); el.g3 = g;
-      const mkG = (id, rgb) => { const r = H.el('radialGradient', { id }, defs);
-        [[0, .30], [0.62, .26], [0.8, .20], [0.9, .28], [1, 0]].forEach(([o, a]) => H.el('stop', { offset: o, 'stop-color': rgb, 'stop-opacity': a }, r)); };
-      mkG('gWarm', '#ff7a4a'); mkG('gCold', '#5aa2ff');
-      const rows = [[440, 85, 34], [610, 100, -26], [780, 92, 42], [950, 100, -30], [1120, 88, 36], [1275, 70, -28]];
-      let sd = 3;
-      const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
-      rows.forEach(([y, r, v], ri) => {
-        let x = -120 + rnd() * 80, k = ri % 2;
-        while (x < 1300) { const rr = r * (0.8 + 0.4 * rnd()), temp = (k++ % 2) ? 1 : -1;
-          const e = H.el('circle', { cx: 0, cy: y, r: f1(rr), fill: temp > 0 ? 'url(#gCold)' : 'url(#gWarm)' }, g);
-          CELLS.push({ x0: x, y: y + (rnd() - 0.5) * 24, r: rr, temp, v: v * (0.8 + 0.4 * rnd()), ph: rnd() * 6, e });
-          x += rr * 2.0 + 40 + rnd() * 90; }
-      });
-      el.ref = H.el('line', { x1: STAR3[0], y1: STAR3[1] + 14, x2: STAR3[0], y2: EYE3[1] - 30, stroke: '#cfe2ff', 'stroke-width': 2, 'stroke-dasharray': '6 10', opacity: 0 }, g);
+      el.ref = H.el('line', { stroke: '#cfe2ff', 'stroke-width': 2.5, 'stroke-dasharray': '8 12', opacity: 0 }, g);
       el.ray3g = H.el('polyline', { fill: 'none', stroke: '#9cc8ff', 'stroke-width': 14, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0 }, g);
       el.ray3 = H.el('polyline', { fill: 'none', stroke: '#f2f7ff', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0 }, g);
-      // kichik ko'z belgisi
-      el.eye3 = H.el('g', { transform: `translate(${EYE3[0]} ${EYE3[1]})`, opacity: 0 }, g);
-      H.el('path', { d: 'M-46,0 Q0,-34 46,0 Q0,34 -46,0 Z', fill: '#e9eef6', stroke: '#0b1630', 'stroke-width': 3 }, el.eye3);
-      H.el('circle', { cx: 0, cy: 0, r: 15, fill: '#6b4a2a' }, el.eye3);
-      H.el('circle', { cx: 0, cy: 0, r: 7, fill: '#05070c' }, el.eye3);
-      H.el('circle', { cx: -5, cy: -5, r: 3, fill: '#fff' }, el.eye3);
-      // afsona
-      const leg = (x, y, txt, col, dotc, anchor) => { const t = H.tag(x, y, txt, col, g, anchor, 26);
-        const b = t.querySelector('rect'); const bx = +b.getAttribute('x'), bw = +b.getAttribute('width');
-        if (anchor === 'start') { b.setAttribute('x', bx - 30); b.setAttribute('width', bw + 30); H.el('circle', { cx: bx - 4, cy: y - 9, r: 10, fill: dotc }, t); }
-        else { b.setAttribute('x', bx - 30); b.setAttribute('width', bw + 30); H.el('circle', { cx: bx - 4, cy: y - 9, r: 10, fill: dotc }, t); }
-        return t; };
-      el.lWarm = leg(84, 320, 'issiq havo', '#ffb08a', '#ff7a4a', 'start');
-      el.lCold = leg(1010, 320, 'sovuq havo', '#9fd2ff', '#5aa2ff', 'end');
-      el.note3 = text(H, g, 54, 378, '* sxematik: sinish bo‘rttirilgan', { fill: '#9fb0cc', 'font-size': 24, 'font-weight': 400, opacity: 0 });
+      const pg = H.el('g', { style: 'filter: brightness(.78) saturate(.92)' }, g);
+      const pm = H.el('g', { transform: `translate(${2 * PX3} 0) scale(-1 1)` }, pg);
+      const P = personSide(H, pm, PX3, PY3, PH3, 'q', -28);
+      EYE3 = [2 * PX3 - P.eye[0], P.eye[1]];
+      const leg = (x, y, txt, col, dotc) => { const t = H.tag(x + 30, y, txt, col, g, 'start', 30);
+        const b = t.querySelector('rect'); b.setAttribute('x', +b.getAttribute('x') - 30); b.setAttribute('width', +b.getAttribute('width') + 30);
+        H.el('circle', { cx: x + 12, cy: y - 10, r: 11, fill: dotc }, t); return t; };
+      el.lWarm = leg(56, LAY[0][0] + 12, 'issiq havo', '#ffb08a', '#ff7a4a');
+      el.lCold = leg(56, LAY[1][0] + 12, 'sovuq havo', '#9fd2ff', '#5aa2ff');
+      el.lWind = H.tag(1010, 880, 'shamol →', '#ffffff', g, 'end', 30);
+      el.note3 = text(H, g, 56, 300, '* sxematik: sinish bo‘rttirilgan', { fill: '#b7c3da', 'font-size': 24, 'font-weight': 400, opacity: 0 });
     }
-
     // ===== 4: ko'z — nur yo'li va yorqinlik grafigi =====
     { const g = H.el('g', { opacity: 0 }, ov); el.g4 = g;
       const lg = H.el('linearGradient', { id: 'gBeam', gradientUnits: 'userSpaceOnUse', x1: STAR4[0], y1: STAR4[1], x2: PUP[0], y2: PUP[1] }, defs);
@@ -638,7 +695,7 @@ return {
     let P = [OFF, OFF, OFF, OFF], C = [OFF, OFF, OFF, OFF];
     let fade = 1; for (let i = 1; i <= 5; i++) fade = Math.min(fade, clamp01(Math.abs(t - B[i]) / 0.14));
     H.set('uFade', fade * (1 - 0.35 * ramp(B[6], B[6] + 0.5, t)));
-    H.set('uTreeA', 9); H.set('uTreeB', 9); H.set('uTw', 1); H.set('uExposure', 1.35);
+    H.set('uLay', 0); H.set('uTreeA', 9); H.set('uTreeB', 9); H.set('uTw', 1); H.set('uExposure', 1.35);
     H.set('uSpot', [0, 0, 0]);
 
     // ---- katta yozuvlar (bir vaqtda faqat bittasi; 5 va 6 oxirgi kartada birga)
@@ -665,9 +722,13 @@ return {
       P[2] = [640, 830, 0.9]; C[2] = [0.9, 0.95, 1.0];
       P[3] = [380, 1010, 0.8]; C[3] = [0.95, 0.95, 1.0];
     } else if (sc === 2) {
-      // ---- 3: atmosfera kesimi
-      H.set('uScene', 2); H.set('uExposure', 1.1);
-      P[0] = [STAR3[0], STAR3[1], 1.2]; C[0] = [0.9, 0.95, 1.05];
+      // ---- 3: masjid, odam, havo qatlamlari
+      const c = camOf(dirOf(25, -8 - 0.6 * (t - B[2]) / 5.85));
+      H.set('uScene', 0); H.set('uCamPos', CPOS); H.set('uCam', c.m); H.set('uTanHalf', TAN1);
+      H.set('uLay', ramp(B[2] + 0.2, B[2] + 1.0, t));
+      const b = twk(t, 3.3, 0.36), sp = proj(c, TAN1, STAR3D);
+      el.s3 = [sp[0] + 2.5 * N(t, 6.1), sp[1] + 2.5 * N(t, 8.8)];
+      P[0] = [el.s3[0], el.s3[1], 1.25]; C[0] = [0.9 * b, 0.95 * b, 1.05 * b];
     } else if (sc === 3) {
       // ---- 4: ko'z
       H.set('uScene', 3); H.set('uExposure', 1.0);
@@ -701,30 +762,28 @@ return {
     ['uP0', 'uP1', 'uP2', 'uP3'].forEach((n, i) => H.set(n, P[i]));
     ['uC0', 'uC1', 'uC2', 'uC3'].forEach((n, i) => H.set(n, C[i]));
 
-    // ---- 3: havo kataklari va sinayotgan nur
+    // ---- 3: havo qatlamlari va sinayotgan nur (har doim ko'zga tushadi)
     { const v = win(B[2], B[3], t, 0.25, 0.15); H.sop(el.g3, v);
-      if (v > 0) {
-        const kc = ramp(B[2] + 0.1, B[2] + 0.9, t);
-        for (const c of CELLS) { let x = c.x0 + c.v * (t - B[2]); x = ((x + 200) % 1500 + 1500) % 1500 - 200;
-          c.x = x; c.yy = c.y + 6 * Math.sin(t * 0.9 + c.ph);
-          c.e.setAttribute('cx', f1(x)); c.e.setAttribute('cy', f1(c.yy)); H.sop(c.e, kc); }
-        // nur: sovuq (zich) havo tomon egiladi — n gradiyenti faqat katak chetida
-        let x = STAR3[0], s = 0; const pts = [[x, STAR3[1] + 8]];
-        const K = 0.085, y1 = EYE3[1] - 26;
-        for (let y = STAR3[1] + 8; y < y1; y += 3) {
-          let gx = 0;
-          for (const c of CELLS) { const dx = x - c.x, dy = y - c.yy, r = Math.hypot(dx, dy), rho = r / c.r;
-            if (rho > 0.7 && rho < 1.0) { const q = (rho - 0.7) / 0.3; gx += c.temp * (-6 * q * (1 - q) / 0.3) * dx / (r * c.r + 1e-6); } }
-          s += K * gx * 3; s = Math.max(-0.35, Math.min(0.35, s)); x += s * 3;
-          pts.push([x, y]);
+      if (v > 0 && el.s3) {
+        const S = el.s3, E = EYE3, y0 = S[1] + 10, y1 = E[1], n = Math.ceil((y1 - y0) / 3);
+        const kl = ramp(B[2] + 0.2, B[2] + 1.0, t);
+        let dev = 0, ds = 0; const pts = [], prev = LAY.map(() => -1);
+        for (let i = 0; i <= n; i++) {
+          const y = y0 + (y1 - y0) * i / n, xs = S[0] + (E[0] - S[0]) * i / n, x = xs + dev;
+          LAY.forEach(([yc, h, temp], k) => { const c = layY(k, x, t), side = y < c - h ? 0 : y < c + h ? 1 : 2;
+            if (prev[k] >= 0 && side !== prev[k]) ds += 0.16 * temp * (side === 1 ? 1 : -1) * (0.75 + 0.35 * Math.sin(t * 1.9 + k * 2.3)) * kl;
+            prev[k] = side; });
+          dev += ds * (y1 - y0) / n; pts.push([xs, dev, y]);
         }
-        const kr = ramp(8.9, 9.9, t), n = Math.max(2, Math.round(pts.length * kr));
-        const pv = pts.slice(0, n).map(p => f1(p[0]) + ',' + f1(p[1])).join(' ');
-        el.ray3.setAttribute('points', pv); el.ray3g.setAttribute('points', pv);
-        H.sop(el.ray3, kr > 0 ? 1 : 0); H.sop(el.ray3g, kr > 0 ? 0.3 : 0);
-        H.sop(el.ref, 0.35 * ramp(9.6, 10.0, t));
-        H.sop(el.eye3, ramp(B[2] + 0.3, B[2] + 0.7, t));
-        H.sop(el.lWarm, ramp(7.0, 7.3, t)); H.sop(el.lCold, ramp(7.8, 8.1, t));
+        const dEnd = pts[pts.length - 1][1];
+        const pv = pts.map(([xs, d, y], i) => [xs + d - dEnd * i / (pts.length - 1), y]);
+        const kr = ramp(8.9, 9.9, t), m = Math.max(2, Math.round(pv.length * kr));
+        const ps = pv.slice(0, m).map(p => f1(p[0]) + ',' + f1(p[1])).join(' ');
+        el.ray3.setAttribute('points', ps); el.ray3g.setAttribute('points', ps);
+        H.sop(el.ray3, kr > 0 ? 0.95 : 0); H.sop(el.ray3g, kr > 0 ? 0.3 : 0);
+        el.ref.setAttribute('x1', f1(S[0])); el.ref.setAttribute('y1', f1(S[1] + 14)); el.ref.setAttribute('x2', f1(E[0])); el.ref.setAttribute('y2', f1(E[1]));
+        H.sop(el.ref, 0.45 * ramp(9.6, 10.0, t));
+        H.sop(el.lWarm, ramp(7.0, 7.3, t)); H.sop(el.lCold, ramp(7.8, 8.1, t)); H.sop(el.lWind, ramp(8.3, 8.6, t));
         el.note3.setAttribute('opacity', ramp(9.4, 9.8, t).toFixed(3));
       }
     }
